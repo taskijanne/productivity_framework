@@ -7,9 +7,10 @@ from typing import List, Optional
 import sqlite3
 from datetime import datetime
 
-from models import ObservationType, Observation, MetricType, MetricResult
+from models import ObservationType, Observation, MetricType, MetricResult, CPSRequest, CPSResponse
 from database import get_db_connection
 from services import calculate_metric
+from services.cps_calculator import calculate_cps
 
 
 router = APIRouter()
@@ -26,6 +27,7 @@ def read_root():
             "/observation_types": "Get all allowed observation types",
             "/metric_types": "Get all available metric types",
             "/metrics": "Calculate metrics for a given time period",
+            "/cps": "Calculate Composite Productivity Score (POST)",
             "/docs": "Interactive API documentation"
         }
     }
@@ -173,3 +175,91 @@ def get_metrics(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculating metric: {str(e)}")
+
+
+@router.post("/cps", response_model=CPSResponse)
+def calculate_composite_productivity_score(request: CPSRequest):
+    """
+    Calculate Composite Productivity Score (CPS) as a weighted sum of metric z-scores.
+    
+    CPS = Σ(weight_i × z_score_i) for i = 1 to n
+    
+    Args:
+        request: CPSRequest containing start_time, end_time, and metrics with weights
+    
+    Returns:
+        CPSResponse: Contains the calculated CPS and detailed results for each metric
+        
+    Validations:
+        - start_time and end_time must be valid timestamps
+        - end_time must not be before start_time
+        - metrics array must contain at least one metric
+        - all metric values must be valid MetricType enum values
+        - weight must be between 0 and 1 (inclusive)
+    """
+    try:
+        # Validate and normalize timestamp format
+        def validate_and_normalize_timestamp(ts: str) -> str:
+            """Validate timestamp and convert to SQLite format."""
+            try:
+                # Try parsing ISO 8601 format with T separator
+                if 'T' in ts:
+                    dt = datetime.fromisoformat(ts.replace('Z', ''))
+                else:
+                    # Try parsing space-separated format
+                    dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                
+                # Return in SQLite-compatible format (space separator)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError as e:
+                raise ValueError(f"Invalid timestamp format: {ts}. Expected format: YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS")
+        
+        # Validate timestamps
+        normalized_start = validate_and_normalize_timestamp(request.start_time)
+        normalized_end = validate_and_normalize_timestamp(request.end_time)
+        
+        # Validate end_time is not before start_time
+        start_dt = datetime.strptime(normalized_start, "%Y-%m-%d %H:%M:%S")
+        end_dt = datetime.strptime(normalized_end, "%Y-%m-%d %H:%M:%S")
+        
+        if end_dt < start_dt:
+            raise HTTPException(
+                status_code=400,
+                detail="end_time cannot be before start_time"
+            )
+        
+        # Validate that metrics array has at least one item (handled by Pydantic min_length=1)
+        # Validate all metric types
+        valid_metrics = [mt.value for mt in MetricType]
+        for metric_config in request.metrics:
+            if metric_config.metric not in valid_metrics:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid metric type '{metric_config.metric}'. Must be one of: {', '.join(valid_metrics)}"
+                )
+        
+        # Weight validation is handled by Pydantic Field constraints (ge=0.0, le=1.0)
+        
+        # Convert request to dict format for service
+        metrics_list = [
+            {'metric': m.metric, 'weight': m.weight}
+            for m in request.metrics
+        ]
+        
+        # Calculate CPS (pass both normalized and original timestamps)
+        result = calculate_cps(
+            start_time=normalized_start,
+            end_time=normalized_end,
+            metrics=metrics_list,
+            original_start_time=request.start_time,
+            original_end_time=request.end_time
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating CPS: {str(e)}")

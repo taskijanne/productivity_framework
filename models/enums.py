@@ -66,4 +66,27 @@ class MetricType(str, Enum):
             "metric_types": [metric.value for metric in cls],
             "descriptions": {metric.value: metric.description for metric in cls}
         }
+    
+    @classmethod
+    def is_inverted_metric(cls, metric_type: str) -> bool:
+        """
+        Check if a metric is 'inverted' (lower values are better).
+        
+        For inverted metrics, the z-score should be multiplied by -1
+        so that positive z-scores always indicate better performance.
+        
+        Args:
+            metric_type: The metric type to check
+            
+        Returns:
+            True if lower values are better (inverted), False otherwise
+        """
+        # Metrics where LOWER values indicate BETTER performance
+        inverted_metrics = {
+            cls.CHANGE_FAILURE_RATE.value,      # Lower failure rate is better
+            cls.MEAN_TIME_TO_RECOVER.value,     # Lower recovery time is better
+            cls.LEAD_TIME_FOR_CHANGES.value,    # Lower lead time is better
+            cls.AI_REWORK_RATE.value,           # Lower rework rate is better
+        }
+        return metric_type in inverted_metrics
 

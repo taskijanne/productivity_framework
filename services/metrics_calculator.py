@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from database import get_db_connection
 from models.enums import MetricType
+import time
 
 
 def calculate_metric(
@@ -58,31 +59,47 @@ def calculate_metric(
     }
     
     calculator = calculators[metric_enum]
-    return calculator(start_time, end_time, db_name)
+    result = calculator(start_time, end_time, db_name)
+    
+    # Apply z-score inversion for metrics where lower values are better
+    if MetricType.is_inverted_metric(metric_type):
+        result['z_score'] = -result['z_score']
+    
+    return result
 
 
 def _calculate_z_score_metrics(
     timeframe_values: pd.Series,
-    population_values: pd.Series
-) -> Dict[str, float]:
+    population_values: pd.Series,
+    min_timestamp: Optional[str] = None,
+    max_timestamp: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Calculate z-score and related metrics.
     
     Args:
         timeframe_values: Values within the specified timeframe
         population_values: All values (population)
+        min_timestamp: Optional minimum timestamp of actual data in timeframe
+        max_timestamp: Optional maximum timestamp of actual data in timeframe
         
     Returns:
-        Dictionary with mean_value, amount_of_observations, z_score, z_score_mean, z_score_std
+        Dictionary with mean_value, amount_of_observations, z_score, z_score_mean, z_score_std,
+        and optionally min_timestamp and max_timestamp
     """
     if len(timeframe_values) == 0:
-        return {
+        result = {
             "mean_value": 0.0,
             "amount_of_observations": 0,
             "z_score": 0.0,
             "z_score_mean": 0.0,
             "z_score_std": 0.0
         }
+        if min_timestamp is not None:
+            result["min_timestamp"] = min_timestamp
+        if max_timestamp is not None:
+            result["max_timestamp"] = max_timestamp
+        return result
 
     mean_value = float(timeframe_values.mean())
     amount_of_observations = len(timeframe_values)
@@ -102,13 +119,20 @@ def _calculate_z_score_metrics(
     else:
         z_score = 0.0
     
-    return {
+    result = {
         "mean_value": mean_value,
         "amount_of_observations": amount_of_observations,
         "z_score": z_score,
         "z_score_mean": population_mean,
         "z_score_std": population_std
     }
+    
+    if min_timestamp is not None:
+        result["min_timestamp"] = min_timestamp
+    if max_timestamp is not None:
+        result["max_timestamp"] = max_timestamp
+    
+    return result
 
 
 def _get_observations_df(
@@ -182,24 +206,41 @@ def calculate_deployment_frequency(start_time: str, end_time: str, db_name: str)
     
     conn.close()
     
-    def calculate_daily_counts(deployments_df, period_start, period_end):
+    def calculate_daily_counts(deployments_df, period_start, period_end, use_actual_data_range=False):
         """
         Calculate deployment count for each day in the period.
         Returns a series with one value per day (0 for days with no deployments).
+        
+        Args:
+            deployments_df: DataFrame with deployment timestamps
+            period_start: Start of period
+            period_end: End of period
+            use_actual_data_range: If True, only count days between actual min/max data timestamps
         """
-        period_start_dt = pd.to_datetime(period_start)
-        period_end_dt = pd.to_datetime(period_end)
-        
-        # Generate all dates in the period
-        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
-        
         if deployments_df.empty:
-            # Return 0 for each day
-            return pd.Series([0.0] * len(date_range))
+            # Return empty series if no data
+            return pd.Series([]), None, None
         
         # Convert timestamps to datetime and extract date
         deployments_df['timestamp'] = pd.to_datetime(deployments_df['timestamp'])
         deployments_df['date'] = deployments_df['timestamp'].dt.date
+        
+        if use_actual_data_range:
+            # Use actual data range instead of requested range
+            actual_min = deployments_df['timestamp'].min()
+            actual_max = deployments_df['timestamp'].max()
+            period_start_dt = actual_min
+            period_end_dt = actual_max
+            min_timestamp = actual_min.strftime('%Y-%m-%d %H:%M:%S')
+            max_timestamp = actual_max.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            period_start_dt = pd.to_datetime(period_start)
+            period_end_dt = pd.to_datetime(period_end)
+            min_timestamp = None
+            max_timestamp = None
+        
+        # Generate all dates in the period
+        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
         
         # Count deployments per day
         daily_counts = deployments_df.groupby('date').size()
@@ -210,21 +251,24 @@ def calculate_deployment_frequency(start_time: str, end_time: str, db_name: str)
             count = daily_counts.get(date.date(), 0)
             all_dates_counts.append(float(count))
         
-        return pd.Series(all_dates_counts)
+        return pd.Series(all_dates_counts), min_timestamp, max_timestamp
     
-    timeframe_values = calculate_daily_counts(deployments_tf, start_time, end_time)
+    # Calculate timeframe values using actual data range
+    timeframe_values, min_timestamp, max_timestamp = calculate_daily_counts(
+        deployments_tf, start_time, end_time, use_actual_data_range=True
+    )
     
     # For population, use the full span of all data
     if not deployments_pop.empty:
         deployments_pop['timestamp'] = pd.to_datetime(deployments_pop['timestamp'])
         pop_start = deployments_pop['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
         pop_end = deployments_pop['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
-        population_values = calculate_daily_counts(deployments_pop, pop_start, pop_end)
+        population_values, _, _ = calculate_daily_counts(deployments_pop, pop_start, pop_end, use_actual_data_range=False)
     else:
         # If no deployments at all, return at least one observation of 0
         population_values = pd.Series([0.0])
     
-    result = _calculate_z_score_metrics(timeframe_values, population_values)
+    result = _calculate_z_score_metrics(timeframe_values, population_values, min_timestamp, max_timestamp)
     return result
 
 
@@ -366,24 +410,41 @@ def calculate_number_of_commits(start_time: str, end_time: str, db_name: str) ->
     
     conn.close()
     
-    def calculate_daily_counts(commits_df, period_start, period_end):
+    def calculate_daily_counts(commits_df, period_start, period_end, use_actual_data_range=False):
         """
         Calculate commit count for each day in the period.
         Returns a series with one value per day (0 for days with no commits).
+        
+        Args:
+            commits_df: DataFrame with commit timestamps
+            period_start: Start of period
+            period_end: End of period
+            use_actual_data_range: If True, only count days between actual min/max data timestamps
         """
-        period_start_dt = pd.to_datetime(period_start)
-        period_end_dt = pd.to_datetime(period_end)
-        
-        # Generate all dates in the period
-        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
-        
         if commits_df.empty:
-            # Return 0 for each day
-            return pd.Series([0.0] * len(date_range))
+            # Return empty series if no data
+            return pd.Series([]), None, None
         
         # Convert timestamps to datetime and extract date
         commits_df['timestamp'] = pd.to_datetime(commits_df['timestamp'])
         commits_df['date'] = commits_df['timestamp'].dt.date
+        
+        if use_actual_data_range:
+            # Use actual data range instead of requested range
+            actual_min = commits_df['timestamp'].min()
+            actual_max = commits_df['timestamp'].max()
+            period_start_dt = actual_min
+            period_end_dt = actual_max
+            min_timestamp = actual_min.strftime('%Y-%m-%d %H:%M:%S')
+            max_timestamp = actual_max.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            period_start_dt = pd.to_datetime(period_start)
+            period_end_dt = pd.to_datetime(period_end)
+            min_timestamp = None
+            max_timestamp = None
+        
+        # Generate all dates in the period
+        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
         
         # Count commits per day
         daily_counts = commits_df.groupby('date').size()
@@ -394,21 +455,24 @@ def calculate_number_of_commits(start_time: str, end_time: str, db_name: str) ->
             count = daily_counts.get(date.date(), 0)
             all_dates_counts.append(float(count))
         
-        return pd.Series(all_dates_counts)
+        return pd.Series(all_dates_counts), min_timestamp, max_timestamp
     
-    timeframe_values = calculate_daily_counts(commits_tf, start_time, end_time)
+    # Calculate timeframe values using actual data range
+    timeframe_values, min_timestamp, max_timestamp = calculate_daily_counts(
+        commits_tf, start_time, end_time, use_actual_data_range=True
+    )
     
     # For population, use the full span of all data
     if not commits_pop.empty:
         commits_pop['timestamp'] = pd.to_datetime(commits_pop['timestamp'])
         pop_start = commits_pop['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
         pop_end = commits_pop['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
-        population_values = calculate_daily_counts(commits_pop, pop_start, pop_end)
+        population_values, _, _ = calculate_daily_counts(commits_pop, pop_start, pop_end, use_actual_data_range=False)
     else:
         # If no commits at all, return at least one observation of 0
         population_values = pd.Series([0.0])
     
-    result = _calculate_z_score_metrics(timeframe_values, population_values)
+    result = _calculate_z_score_metrics(timeframe_values, population_values, min_timestamp, max_timestamp)
     return result
 
 
@@ -476,20 +540,26 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
     conn.close()
     
     def calculate_lead_times(commits_df, deployments_df):
-        """Calculate lead times for commit-deployment pairs."""
-        lead_times = []
+        """Calculate lead times for commit-deployment pairs using vectorized operations."""
+        if commits_df.empty or deployments_df.empty:
+            return pd.Series([])
         
-        for _, commit in commits_df.iterrows():
-            deployment_id = commit['deployment_id']
-            matching_deployments = deployments_df[deployments_df['id'] == deployment_id]
-            
-            if not matching_deployments.empty:
-                commit_time = pd.to_datetime(commit['timestamp'])
-                deployment_time = pd.to_datetime(matching_deployments.iloc[0]['timestamp'])
-                lead_time_minutes = (deployment_time - commit_time).total_seconds() / 60
-                lead_times.append(lead_time_minutes)
+        # Prepare deployments dataframe with timestamp as index for fast lookup
+        deployments_lookup = deployments_df.set_index('id')['timestamp']
         
-        return pd.Series(lead_times)
+        # Merge commits with deployments on deployment_id
+        commits_with_deployments = commits_df.copy()
+        commits_with_deployments['deployment_timestamp'] = commits_with_deployments['deployment_id'].map(deployments_lookup)
+        
+        # Filter out commits without matching deployment
+        commits_with_deployments = commits_with_deployments.dropna(subset=['deployment_timestamp'])
+        
+        # Vectorized datetime conversion and calculation
+        commit_times = pd.to_datetime(commits_with_deployments['timestamp'])
+        deployment_times = pd.to_datetime(commits_with_deployments['deployment_timestamp'])
+        lead_times = (deployment_times - commit_times).dt.total_seconds() / 60
+        
+        return lead_times
     
     timeframe_values = calculate_lead_times(commits_tf, deployments_tf)
     population_values = calculate_lead_times(commits_pop, deployments_pop)
