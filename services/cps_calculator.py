@@ -5,6 +5,7 @@ This module calculates a weighted composite score based on multiple metrics.
 """
 
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
 from services.metrics_calculator import calculate_metric
 
 
@@ -77,3 +78,104 @@ def calculate_cps(
         'cps': cps_total,
         'metrics': metric_results
     }
+
+
+def calculate_cps_with_intervals(
+    start_time: str,
+    end_time: str,
+    intervals: int,
+    metrics: List[Dict[str, Any]],
+    db_name: str = "productivity_framework.db"
+) -> List[Dict[str, Any]]:
+    """
+    Calculate Composite Productivity Score (CPS) for multiple intervals.
+    
+    CPS = Σ(weight_i × z_score_i) for i = 1 to n
+    
+    Args:
+        start_time: Start of the time period (normalized/SQLite format)
+        end_time: End of the time period (normalized/SQLite format)
+        intervals: Number of intervals to divide the time period into
+        metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
+        db_name: Name of the database file
+        
+    Returns:
+        List of dictionaries, each containing:
+        - interval_number: The interval number (1-based)
+        - start_time: Interval start time
+        - end_time: Interval end time
+        - cps: The calculated composite productivity score for this interval
+        - metrics: List of metric results with weight and z_score_weighted
+    """
+    # Parse start and end times
+    start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+    end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+    
+    # Calculate interval duration
+    total_duration = end_dt - start_dt
+    interval_duration = total_duration / intervals
+    
+    interval_results = []
+    
+    for i in range(intervals):
+        interval_start_dt = start_dt + (interval_duration * i)
+        interval_end_dt = start_dt + (interval_duration * (i + 1))
+        
+        # For the last interval, ensure we use the exact end_time
+        if i == intervals - 1:
+            interval_end_dt = end_dt
+        else:
+            # Subtract 1 second from end to avoid overlap
+            interval_end_dt = interval_end_dt - timedelta(seconds=1)
+        
+        interval_start_str = interval_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        interval_end_str = interval_end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate CPS for this interval
+        cps_total = 0.0
+        metric_results = []
+        
+        for metric_config in metrics:
+            metric_type = metric_config['metric']
+            weight = metric_config['weight']
+            
+            # Calculate the metric
+            metric_result = calculate_metric(
+                metric_type=metric_type,
+                start_time=interval_start_str,
+                end_time=interval_end_str,
+                db_name=db_name
+            )
+            
+            # Get z-score from result
+            z_score = metric_result.get('z_score', 0.0)
+            
+            # Calculate weighted z-score
+            z_score_weighted = weight * z_score
+            
+            # Add to CPS total
+            cps_total += z_score_weighted
+            
+            # Build metric result for response
+            metric_results.append({
+                'metric_type': metric_type,
+                'weight': weight,
+                'z_score': z_score,
+                'z_score_weighted': z_score_weighted,
+                'mean_value': metric_result.get('mean_value', 0.0),
+                'amount_of_observations': metric_result.get('amount_of_observations', 0),
+                'z_score_mean': metric_result.get('z_score_mean', 0.0),
+                'z_score_std': metric_result.get('z_score_std', 0.0),
+                'min_timestamp': metric_result.get('min_timestamp'),
+                'max_timestamp': metric_result.get('max_timestamp')
+            })
+        
+        interval_results.append({
+            'interval_number': i + 1,
+            'start_time': interval_start_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            'end_time': interval_end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            'cps': cps_total,
+            'metrics': metric_results
+        })
+    
+    return interval_results

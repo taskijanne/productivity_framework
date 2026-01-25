@@ -6,6 +6,7 @@ stored in the SQLite database.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from api import router
 
 
@@ -14,6 +15,15 @@ app = FastAPI(
     title="AI Productivity Framework API",
     description="API for accessing productivity metrics and observations",
     version="1.0.0"
+)
+
+# Add CORS middleware to allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include API routes

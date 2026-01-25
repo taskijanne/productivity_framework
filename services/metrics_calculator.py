@@ -276,18 +276,23 @@ def calculate_change_failure_rate(start_time: str, end_time: str, db_name: str) 
     """
     Calculate CHANGE_FAILURE_RATE metric.
     Rate = (Number of DEPLOYMENT_FAILURE) / (Total DEPLOYMENT)
-    For each deployment, we check if it resulted in a failure (value=1) or not (value=0).
+    For each deployment in the timeframe, we check if it resulted in a failure (value=1) or not (value=0).
+    
+    DEPLOYMENT is the "resolving observation" - we get all deployments in the timeframe
+    and check if each has a corresponding failure (which may occur later).
     """
     conn = get_db_connection(db_name)
     
-    # Get deployments and failures in timeframe
+    # Get all deployments in timeframe - this is the "resolving observation"
     deployments_tf = pd.read_sql_query(
         "SELECT id, timestamp FROM observations WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?",
         conn, params=[start_time, end_time]
     )
+    
+    # Get all failures (regardless of timestamp) to check against deployments
     failures_tf = pd.read_sql_query(
-        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE'",
+        conn
     )
     
     # Get all deployments and failures for population
@@ -326,23 +331,36 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str)
     """
     Calculate MEAN_TIME_TO_RECOVER metric.
     Average time (in minutes) between DEPLOYMENT_FAILURE and DEPLOYMENT_FAILURE_FIX.
-    Only considers pairs where both observations are within the timeframe.
+    
+    Only DEPLOYMENT_FAILURE_FIX needs to be within the timeframe - the related DEPLOYMENT_FAILURE can be earlier.
     """
     conn = get_db_connection(db_name)
     
-    # Get failures and fixes in timeframe
-    failures_tf = pd.read_sql_query(
-        """SELECT id, deployment_failure_id, timestamp 
-           FROM observations 
-           WHERE type = 'DEPLOYMENT_FAILURE' AND timestamp BETWEEN ? AND ?""",
-        conn, params=[start_time, end_time]
-    )
+    # Get fixes in timeframe - this is the "resolving observation"
     fixes_tf = pd.read_sql_query(
         """SELECT deployment_failure_id, timestamp 
            FROM observations 
            WHERE type = 'DEPLOYMENT_FAILURE_FIX' AND timestamp BETWEEN ? AND ?""",
         conn, params=[start_time, end_time]
     )
+    
+    # Get the failures related to fixes in timeframe (regardless of failure timestamp)
+    if not fixes_tf.empty:
+        failure_ids = fixes_tf['deployment_failure_id'].dropna().unique().tolist()
+        if failure_ids:
+            placeholders = ','.join(['?' for _ in failure_ids])
+            # Match on deployment_failure_id or id
+            failures_tf = pd.read_sql_query(
+                f"""SELECT id, deployment_failure_id, timestamp 
+                   FROM observations 
+                   WHERE type = 'DEPLOYMENT_FAILURE' 
+                   AND (deployment_failure_id IN ({placeholders}) OR id IN ({placeholders}))""",
+                conn, params=failure_ids + failure_ids
+            )
+        else:
+            failures_tf = pd.DataFrame(columns=['id', 'deployment_failure_id', 'timestamp'])
+    else:
+        failures_tf = pd.DataFrame(columns=['id', 'deployment_failure_id', 'timestamp'])
     
     # Get all failures and fixes for population
     failures_pop = pd.read_sql_query(
@@ -362,13 +380,17 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str)
         """Calculate recovery times for failure-fix pairs."""
         recovery_times = []
         
-        for _, failure in failures_df.iterrows():
-            failure_id = failure['deployment_failure_id'] if pd.notna(failure['deployment_failure_id']) else failure['id']
-            matching_fixes = fixes_df[fixes_df['deployment_failure_id'] == failure_id]
+        for _, fix in fixes_df.iterrows():
+            fix_failure_id = fix['deployment_failure_id']
+            # Find the matching failure
+            matching_failures = failures_df[
+                (failures_df['deployment_failure_id'] == fix_failure_id) | 
+                (failures_df['id'] == fix_failure_id)
+            ]
             
-            if not matching_fixes.empty:
-                failure_time = pd.to_datetime(failure['timestamp'])
-                fix_time = pd.to_datetime(matching_fixes.iloc[0]['timestamp'])
+            if not matching_failures.empty:
+                failure_time = pd.to_datetime(matching_failures.iloc[0]['timestamp'])
+                fix_time = pd.to_datetime(fix['timestamp'])
                 recovery_minutes = (fix_time - failure_time).total_seconds() / 60
                 recovery_times.append(recovery_minutes)
         
@@ -507,23 +529,31 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
     """
     Calculate LEAD_TIME_FOR_CHANGES metric.
     Average time (in minutes) between COMMIT and DEPLOYMENT for commits with deployment references.
+    
+    Only DEPLOYMENT needs to be within the timeframe - the related COMMIT can be earlier.
     """
     conn = get_db_connection(db_name)
     
-    # Get commits and deployments in timeframe
-    commits_tf = pd.read_sql_query(
-        """SELECT commit_hash, deployment_id, timestamp 
-           FROM observations 
-           WHERE type = 'COMMIT' AND deployment_id IS NOT NULL 
-           AND timestamp BETWEEN ? AND ?""",
-        conn, params=[start_time, end_time]
-    )
+    # Get deployments in timeframe - this is the "resolving observation"
     deployments_tf = pd.read_sql_query(
         """SELECT id, timestamp 
            FROM observations 
            WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?""",
         conn, params=[start_time, end_time]
     )
+    
+    # Get commits that reference deployments in timeframe (regardless of commit timestamp)
+    if not deployments_tf.empty:
+        deployment_ids = deployments_tf['id'].tolist()
+        placeholders = ','.join(['?' for _ in deployment_ids])
+        commits_tf = pd.read_sql_query(
+            f"""SELECT commit_hash, deployment_id, timestamp 
+               FROM observations 
+               WHERE type = 'COMMIT' AND deployment_id IN ({placeholders})""",
+            conn, params=deployment_ids
+        )
+    else:
+        commits_tf = pd.DataFrame(columns=['commit_hash', 'deployment_id', 'timestamp'])
     
     # Get all commits and deployments for population
     commits_pop = pd.read_sql_query(
