@@ -7,9 +7,9 @@ function MetricsPage() {
   const [metricTypes, setMetricTypes] = useState([]);
   const [xAxisMetric, setXAxisMetric] = useState('');
   const [yAxisMetric, setYAxisMetric] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [intervals, setIntervals] = useState(1);
+  const [startDate, setStartDate] = useState('2025-01-01');
+  const [endDate, setEndDate] = useState('2025-12-31');
+  const [intervals, setIntervals] = useState(12);
   const [results, setResults] = useState(null);
   const [correlations, setCorrelations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -42,14 +42,6 @@ function MetricsPage() {
     };
 
     fetchMetricTypes();
-
-    // Set default dates (last 30 days)
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    setEndDate(formatDateForInput(today));
-    setStartDate(formatDateForInput(thirtyDaysAgo));
   }, []);
 
   const formatDateForInput = (date) => {

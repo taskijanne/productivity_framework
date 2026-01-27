@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import MetricsPage from './components/MetricsPage';
+import ProductivityPage from './components/ProductivityPage';
 
 function App() {
   const [activeTab, setActiveTab] = useState('metrics');
@@ -9,6 +10,8 @@ function App() {
     switch (activeTab) {
       case 'metrics':
         return <MetricsPage />;
+      case 'productivity':
+        return <ProductivityPage />;
       default:
         return <MetricsPage />;
     }

@@ -3,7 +3,7 @@ import React from 'react';
 function Navbar({ activeTab, setActiveTab }) {
   const tabs = [
     { id: 'metrics', label: 'Metrics' },
-    // New tabs will be added here later
+    { id: 'productivity', label: 'Productivity' },
   ];
 
   return (
