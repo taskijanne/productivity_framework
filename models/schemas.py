@@ -25,9 +25,9 @@ class MetricResult(BaseModel):
     end_time: str
     mean_value: float
     amount_of_observations: int
-    z_score: float
-    z_score_mean: float
-    z_score_std: float
+    z_score: Optional[float] = None
+    z_score_mean: Optional[float] = None
+    z_score_std: Optional[float] = None
     min_timestamp: Optional[str] = None
     max_timestamp: Optional[str] = None
 
@@ -75,9 +75,9 @@ class IntervalMetricResult(BaseModel):
     end_time: str
     mean_value: float
     amount_of_observations: int
-    z_score: float
-    z_score_mean: float
-    z_score_std: float
+    z_score: Optional[float] = None
+    z_score_mean: Optional[float] = None
+    z_score_std: Optional[float] = None
     min_timestamp: Optional[str] = None
     max_timestamp: Optional[str] = None
 
@@ -87,9 +87,9 @@ class SingleMetricResult(BaseModel):
     metric_type: str
     mean_value: float
     amount_of_observations: int
-    z_score: float
-    z_score_mean: float
-    z_score_std: float
+    z_score: Optional[float] = None
+    z_score_mean: Optional[float] = None
+    z_score_std: Optional[float] = None
     min_timestamp: Optional[str] = None
     max_timestamp: Optional[str] = None
 

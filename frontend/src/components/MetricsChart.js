@@ -46,16 +46,19 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
     ];
   };
 
+  // Check if X-axis is Time
+  const isTimeXAxis = xAxisMetric === 'Time';
+
   // Transform the API response data into chart-friendly format
   const chartData = data.map((interval) => {
-    const xMetric = interval.metrics.find((m) => m.metric_type === xAxisMetric);
+    const xMetric = isTimeXAxis ? null : interval.metrics.find((m) => m.metric_type === xAxisMetric);
     const yMetric = interval.metrics.find((m) => m.metric_type === yAxisMetric);
 
     return {
       interval_number: interval.interval_number,
       start_time: interval.start_time,
       end_time: interval.end_time,
-      x: xMetric ? xMetric.mean_value : 0,
+      x: isTimeXAxis ? interval.interval_number : (xMetric ? xMetric.mean_value : 0),
       y: yMetric ? yMetric.mean_value : 0,
       xMetricData: xMetric,
       yMetricData: yMetric,
@@ -86,10 +89,17 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
             {point.start_time} → {point.end_time}
           </p>
           <div className="tooltip-metrics">
-            <div className="tooltip-metric">
-              <strong>{xAxisMetric.replace(/_/g, ' ')}:</strong>
-              <span>{point.x?.toFixed(2)}</span>
-            </div>
+            {isTimeXAxis ? (
+              <div className="tooltip-metric">
+                <strong>Interval:</strong>
+                <span>{point.interval_number}</span>
+              </div>
+            ) : (
+              <div className="tooltip-metric">
+                <strong>{xAxisMetric.replace(/_/g, ' ')}:</strong>
+                <span>{point.x?.toFixed(2)}</span>
+              </div>
+            )}
             <div className="tooltip-metric">
               <strong>{yAxisMetric.replace(/_/g, ' ')}:</strong>
               <span>{point.y?.toFixed(2)}</span>
@@ -119,7 +129,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
   return (
     <div className="metrics-chart-container">
       <h3>Metrics Comparison Chart</h3>
-      {currentCorrelation && (
+      {!isTimeXAxis && currentCorrelation && (
         <div className="correlation-coefficient">
           Pearson r = <span className={currentCorrelation.pearson_coefficient >= 0 ? 'positive' : 'negative'}>
             {currentCorrelation.pearson_coefficient.toFixed(4)}
@@ -138,9 +148,9 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
               dataKey="x"
               name={xAxisMetric}
               tick={{ fill: '#ccc' }}
-              tickFormatter={(value) => value.toFixed(2)}
+              tickFormatter={(value) => isTimeXAxis ? Math.round(value) : value.toFixed(2)}
               label={{
-                value: formatAxisLabel(xAxisMetric),
+                value: isTimeXAxis ? 'Time (Interval)' : formatAxisLabel(xAxisMetric),
                 position: 'bottom',
                 offset: 40,
                 fill: '#ccc',
@@ -195,7 +205,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
         </ResponsiveContainer>
       </div>
 
-      {currentCorrelation && (
+      {!isTimeXAxis && currentCorrelation && (
         <div className="correlation-info">
           <div className="correlation-header">
             <h4>Correlation Analysis</h4>
@@ -238,7 +248,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
               <p><strong>End:</strong> {hoveredPoint.end_time}</p>
             </div>
             
-            {hoveredPoint.xMetricData && (
+            {!isTimeXAxis && hoveredPoint.xMetricData && (
               <div className="info-section">
                 <h5>{xAxisMetric.replace(/_/g, ' ')}</h5>
                 <div className="metric-details">

@@ -54,7 +54,7 @@ def calculate_metric(
         MetricType.LACK_OF_INTERRUPTIONS: calculate_lack_of_interruptions,
         MetricType.LEAD_TIME_FOR_CHANGES: calculate_lead_time_for_changes,
         MetricType.AI_ACCEPTANCE_RATE: calculate_ai_acceptance_rate,
-        MetricType.AI_CODE_VOLUME: calculate_ai_code_volume,
+        MetricType.LINES_OF_CODE_AI: calculate_lines_of_code_ai,
         MetricType.AI_REWORK_RATE: calculate_ai_rework_rate,
     }
     
@@ -404,11 +404,74 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str)
 
 
 def calculate_lines_of_code(start_time: str, end_time: str, db_name: str) -> Dict[str, Any]:
-    """Calculate LINES_OF_CODE metric based on LINES_OF_CODE observations."""
-    timeframe_df = _get_observations_df("LINES_OF_CODE", db_name, start_time, end_time)
-    population_df = _get_observations_df("LINES_OF_CODE", db_name)
+    """
+    Calculate LINES_OF_CODE metric based on daily sum of lines of code.
+    For each day in the period, sum the lines of code (0 if none).
+    """
+    conn = get_db_connection(db_name)
     
-    result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
+    # Get lines of code in timeframe
+    loc_tf = pd.read_sql_query(
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND timestamp BETWEEN ? AND ?",
+        conn, params=[start_time, end_time]
+    )
+    
+    # Get all lines of code for population
+    loc_pop = pd.read_sql_query(
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE'", conn
+    )
+    
+    conn.close()
+    
+    def calculate_daily_sums(df, period_start, period_end, use_actual_data_range=False):
+        """
+        Calculate sum of lines of code for each day in the period.
+        Returns a series with one value per day (0 for days with no data).
+        """
+        if df.empty:
+            return pd.Series([]), None, None
+        
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['date'] = df['timestamp'].dt.date
+        
+        if use_actual_data_range:
+            actual_min = df['timestamp'].min()
+            actual_max = df['timestamp'].max()
+            period_start_dt = actual_min
+            period_end_dt = actual_max
+            min_timestamp = actual_min.strftime('%Y-%m-%d %H:%M:%S')
+            max_timestamp = actual_max.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            period_start_dt = pd.to_datetime(period_start)
+            period_end_dt = pd.to_datetime(period_end)
+            min_timestamp = None
+            max_timestamp = None
+        
+        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
+        
+        # Sum values per day
+        daily_sums = df.groupby('date')['value'].sum()
+        
+        all_dates_sums = []
+        for date in date_range:
+            total = daily_sums.get(date.date(), 0)
+            all_dates_sums.append(float(total))
+        
+        return pd.Series(all_dates_sums), min_timestamp, max_timestamp
+    
+    timeframe_values, min_timestamp, max_timestamp = calculate_daily_sums(
+        loc_tf, start_time, end_time, use_actual_data_range=True
+    )
+    
+    if not loc_pop.empty:
+        loc_pop['timestamp'] = pd.to_datetime(loc_pop['timestamp'])
+        pop_start = loc_pop['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
+        pop_end = loc_pop['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
+        population_values, _, _ = calculate_daily_sums(loc_pop, pop_start, pop_end, use_actual_data_range=False)
+    else:
+        population_values = pd.Series([0.0])
+    
+    result = _calculate_z_score_metrics(timeframe_values, population_values, min_timestamp, max_timestamp)
     return result
 
 
@@ -607,52 +670,75 @@ def calculate_ai_acceptance_rate(start_time: str, end_time: str, db_name: str) -
     return result
 
 
-def calculate_ai_code_volume(start_time: str, end_time: str, db_name: str) -> Dict[str, Any]:
+def calculate_lines_of_code_ai(start_time: str, end_time: str, db_name: str) -> Dict[str, Any]:
     """
-    Calculate AI_CODE_VOLUME metric.
-    For each observation period, calculate the ratio of AI-generated lines to total lines.
+    Calculate LINES_OF_CODE_AI metric based on daily sum of AI-generated lines of code.
+    For each day in the period, sum the AI lines of code (0 if none).
     """
     conn = get_db_connection(db_name)
     
-    # Get timeframe data - get individual observations to calculate ratios per time period
-    loc_tf = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
-    )
+    # Get AI lines of code in timeframe
     loc_ai_tf = pd.read_sql_query(
         "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI' AND timestamp BETWEEN ? AND ?",
         conn, params=[start_time, end_time]
     )
     
-    # Get population data
-    loc_pop = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE'", conn
-    )
+    # Get all AI lines of code for population
     loc_ai_pop = pd.read_sql_query(
         "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI'", conn
     )
     
     conn.close()
     
-    def calculate_ai_ratios(loc_df, loc_ai_df):
+    def calculate_daily_sums(df, period_start, period_end, use_actual_data_range=False):
         """
-        Calculate AI code volume ratio for each matching timestamp.
-        Returns a series of individual ratios rather than a single aggregate ratio.
+        Calculate sum of AI lines of code for each day in the period.
+        Returns a series with one value per day (0 for days with no data).
         """
-        # Merge on timestamp to get matching observations
-        merged = pd.merge(loc_df, loc_ai_df, on='timestamp', suffixes=('_total', '_ai'))
+        if df.empty:
+            return pd.Series([]), None, None
         
-        if merged.empty:
-            return pd.Series([])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['date'] = df['timestamp'].dt.date
         
-        # Calculate ratio for each observation
-        ratios = merged['value_ai'] / merged['value_total']
-        return ratios
+        if use_actual_data_range:
+            actual_min = df['timestamp'].min()
+            actual_max = df['timestamp'].max()
+            period_start_dt = actual_min
+            period_end_dt = actual_max
+            min_timestamp = actual_min.strftime('%Y-%m-%d %H:%M:%S')
+            max_timestamp = actual_max.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            period_start_dt = pd.to_datetime(period_start)
+            period_end_dt = pd.to_datetime(period_end)
+            min_timestamp = None
+            max_timestamp = None
+        
+        date_range = pd.date_range(start=period_start_dt.date(), end=period_end_dt.date(), freq='D')
+        
+        # Sum values per day
+        daily_sums = df.groupby('date')['value'].sum()
+        
+        all_dates_sums = []
+        for date in date_range:
+            total = daily_sums.get(date.date(), 0)
+            all_dates_sums.append(float(total))
+        
+        return pd.Series(all_dates_sums), min_timestamp, max_timestamp
     
-    timeframe_values = calculate_ai_ratios(loc_tf, loc_ai_tf)
-    population_values = calculate_ai_ratios(loc_pop, loc_ai_pop)
+    timeframe_values, min_timestamp, max_timestamp = calculate_daily_sums(
+        loc_ai_tf, start_time, end_time, use_actual_data_range=True
+    )
     
-    result = _calculate_z_score_metrics(timeframe_values, population_values)
+    if not loc_ai_pop.empty:
+        loc_ai_pop['timestamp'] = pd.to_datetime(loc_ai_pop['timestamp'])
+        pop_start = loc_ai_pop['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
+        pop_end = loc_ai_pop['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
+        population_values, _, _ = calculate_daily_sums(loc_ai_pop, pop_start, pop_end, use_actual_data_range=False)
+    else:
+        population_values = pd.Series([0.0])
+    
+    result = _calculate_z_score_metrics(timeframe_values, population_values, min_timestamp, max_timestamp)
     return result
 
 

@@ -62,7 +62,10 @@ function MetricsPage() {
     setError(null);
 
     try {
-      const metricTypesParam = `${xAxisMetric},${yAxisMetric}`;
+      // If Time is selected for X-axis, only pass Y-axis metric
+      const metricTypesParam = xAxisMetric === 'Time' 
+        ? yAxisMetric 
+        : `${xAxisMetric},${yAxisMetric}`;
       const startTimeParam = formatDateTimeForAPI(startDate);
       const endTimeParam = formatDateTimeForAPI(endDate);
       
@@ -99,6 +102,7 @@ function MetricsPage() {
               onChange={(e) => setXAxisMetric(e.target.value)}
             >
               <option value="">Select metric...</option>
+              <option value="Time">Time</option>
               {metricTypes.map((type) => (
                 <option key={type} value={type}>
                   {type.replace(/_/g, ' ')}
