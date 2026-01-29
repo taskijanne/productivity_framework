@@ -105,6 +105,12 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 {dataPoint.cps.toFixed(4)}
               </span>
             </div>
+            <div className="tooltip-metric">
+              <strong style={{ color: '#4dabf7' }}>Trend:</strong>
+              <span style={{ color: '#4dabf7' }}>
+                {dataPoint.trend?.toFixed(4)}
+              </span>
+            </div>
           </div>
         </div>
       );
@@ -156,6 +162,34 @@ function ProductivityCharts({ data, selectedMetrics }) {
     ? intervals[intervals.length - 1].cps - intervals[0].cps 
     : 0;
 
+  // Calculate linear regression for trend line
+  const calculateTrendLine = (data) => {
+    const n = data.length;
+    if (n < 2) return data.map(() => avgCPS);
+    
+    // Use interval index (0, 1, 2, ...) as x values
+    const xValues = data.map((_, i) => i);
+    const yValues = data.map((d) => d.cps);
+    
+    const sumX = xValues.reduce((a, b) => a + b, 0);
+    const sumY = yValues.reduce((a, b) => a + b, 0);
+    const sumXY = xValues.reduce((sum, x, i) => sum + x * yValues[i], 0);
+    const sumX2 = xValues.reduce((sum, x) => sum + x * x, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    
+    return xValues.map((x) => slope * x + intercept);
+  };
+
+  const trendLineValues = calculateTrendLine(cpsChartData);
+  
+  // Add trend line values to chart data
+  const cpsChartDataWithTrend = cpsChartData.map((point, index) => ({
+    ...point,
+    trend: trendLineValues[index],
+  }));
+
   return (
     <div className="productivity-charts">
       {/* Summary Statistics */}
@@ -195,7 +229,7 @@ function ProductivityCharts({ data, selectedMetrics }) {
         </p>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={cpsChartData} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+            <ComposedChart data={cpsChartDataWithTrend} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#444" />
               <XAxis 
                 dataKey="date" 
@@ -208,14 +242,29 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 tickFormatter={(value) => value.toFixed(2)}
               />
               <Tooltip content={<CPSTooltip />} />
+              <Legend 
+                wrapperStyle={{ color: '#ccc' }}
+                formatter={(value) => <span style={{ color: '#ccc' }}>{value}</span>}
+              />
               <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
               <Line
                 type="monotone"
                 dataKey="cps"
+                name="CPS"
                 stroke="#e94560"
                 strokeWidth={3}
                 dot={{ fill: '#e94560', strokeWidth: 2, r: 6 }}
                 activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
+              />
+              <Line
+                type="linear"
+                dataKey="trend"
+                name="Trend Line"
+                stroke="#4dabf7"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={false}
               />
             </ComposedChart>
           </ResponsiveContainer>
