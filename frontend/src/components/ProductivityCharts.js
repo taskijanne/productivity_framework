@@ -10,7 +10,6 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
-  Cell,
 } from 'recharts';
 
 // Color palette for different metrics
@@ -40,7 +39,7 @@ function ProductivityCharts({ data, selectedMetrics }) {
     );
   }
 
-  const { intervals } = data;
+  const { intervals, predictor } = data;
 
   // Format date for display
   const formatDate = (dateStr) => {
@@ -49,13 +48,27 @@ function ProductivityCharts({ data, selectedMetrics }) {
   };
 
   // Prepare data for CPS line chart
-  const cpsChartData = intervals.map((interval) => ({
-    name: `#${interval.interval_number}`,
-    date: formatDate(interval.start_time),
-    fullDate: interval.start_time,
-    cps: interval.cps,
-    interval_number: interval.interval_number,
-  }));
+  const cpsChartData = intervals.map((interval, index) => {
+    const dataPoint = {
+      name: `#${interval.interval_number}`,
+      date: formatDate(interval.start_time),
+      fullDate: interval.start_time,
+      cps: interval.cps,
+      interval_number: interval.interval_number,
+    };
+    
+    // Add predictor z_score if available
+    if (predictor && predictor.intervals) {
+      const predictorInterval = predictor.intervals.find(
+        (p) => p.interval_number === interval.interval_number
+      );
+      if (predictorInterval) {
+        dataPoint.predictor_z_score = predictorInterval.z_score;
+      }
+    }
+    
+    return dataPoint;
+  });
 
   // Get unique metric types from the data
   const metricTypesInData = intervals[0]?.metrics.map((m) => m.metric_type) || [];
@@ -111,6 +124,14 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 {dataPoint.trend?.toFixed(4)}
               </span>
             </div>
+            {predictor && dataPoint.predictor_z_score !== undefined && (
+              <div className="tooltip-metric">
+                <strong style={{ color: '#00C49F' }}>Predictor Z:</strong>
+                <span style={{ color: '#00C49F' }}>
+                  {dataPoint.predictor_z_score.toFixed(4)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -155,7 +176,6 @@ function ProductivityCharts({ data, selectedMetrics }) {
   };
 
   // Calculate summary statistics
-  const avgCPS = intervals.reduce((sum, i) => sum + i.cps, 0) / intervals.length;
   const maxCPS = Math.max(...intervals.map((i) => i.cps));
   const minCPS = Math.min(...intervals.map((i) => i.cps));
   const trend = intervals.length > 1 
@@ -165,7 +185,7 @@ function ProductivityCharts({ data, selectedMetrics }) {
   // Calculate linear regression for trend line
   const calculateTrendLine = (data) => {
     const n = data.length;
-    if (n < 2) return data.map(() => avgCPS);
+    if (n < 2) return data.map(() => 0);
     
     // Use interval index (0, 1, 2, ...) as x values
     const xValues = data.map((_, i) => i);
@@ -195,12 +215,6 @@ function ProductivityCharts({ data, selectedMetrics }) {
       {/* Summary Statistics */}
       <div className="cps-summary">
         <div className="summary-card">
-          <span className="summary-label">Average CPS</span>
-          <span className={`summary-value ${avgCPS >= 0 ? 'positive' : 'negative'}`}>
-            {avgCPS.toFixed(4)}
-          </span>
-        </div>
-        <div className="summary-card">
           <span className="summary-label">Max CPS</span>
           <span className={`summary-value ${maxCPS >= 0 ? 'positive' : 'negative'}`}>
             {maxCPS.toFixed(4)}
@@ -226,6 +240,7 @@ function ProductivityCharts({ data, selectedMetrics }) {
         <p className="chart-description">
           The CPS combines weighted z-scores of all selected metrics. 
           Positive values indicate above-average performance.
+          {predictor && ` The predictor (${predictor.metric_type.replace(/_/g, ' ')}) z-score is shown for comparison.`}
         </p>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={300}>
@@ -266,10 +281,75 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 dot={false}
                 activeDot={false}
               />
+              {predictor && (
+                <Line
+                  type="monotone"
+                  dataKey="predictor_z_score"
+                  name={`Predictor (${predictor.metric_type.replace(/_/g, ' ')})`}
+                  stroke="#00C49F"
+                  strokeWidth={2}
+                  dot={{ fill: '#00C49F', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Predictor Statistics */}
+      {predictor && predictor.statistics && (
+        <div className="chart-section predictor-statistics-section">
+          <h3>Predictor Analysis: {predictor.metric_type.replace(/_/g, ' ')}</h3>
+          <p className="chart-description">
+            How well does the predictor metric explain the Composite Productivity Score?
+          </p>
+          <div className="predictor-stats-grid">
+            <div className="predictor-stat-card">
+              <span className="stat-label">R² (Explained Variance)</span>
+              <span className="stat-value">{(predictor.statistics.r2 * 100).toFixed(1)}%</span>
+              <span className="stat-description">
+                {predictor.statistics.r2 >= 0.7 ? 'Strong' : 
+                 predictor.statistics.r2 >= 0.5 ? 'Moderate' :
+                 predictor.statistics.r2 >= 0.3 ? 'Weak' : 'Poor'} explanatory power
+              </span>
+            </div>
+            <div className="predictor-stat-card">
+              <span className="stat-label">Correlation</span>
+              <span className={`stat-value ${predictor.statistics.correlation >= 0 ? 'positive' : 'negative'}`}>
+                {predictor.statistics.correlation.toFixed(4)}
+              </span>
+              <span className="stat-description">
+                {Math.abs(predictor.statistics.correlation) >= 0.7 ? 'Very strong' :
+                 Math.abs(predictor.statistics.correlation) >= 0.5 ? 'Strong' :
+                 Math.abs(predictor.statistics.correlation) >= 0.3 ? 'Moderate' : 'Weak'}{' '}
+                {predictor.statistics.correlation >= 0 ? 'positive' : 'negative'} correlation
+              </span>
+            </div>
+            <div className="predictor-stat-card">
+              <span className="stat-label">Slope</span>
+              <span className="stat-value">{predictor.statistics.slope.toFixed(4)}</span>
+              <span className="stat-description">
+                CPS change per unit predictor z-score
+              </span>
+            </div>
+            <div className="predictor-stat-card">
+              <span className="stat-label">P-Value</span>
+              <span className={`stat-value ${predictor.statistics.p_value < 0.05 ? 'significant' : 'not-significant'}`}>
+                {predictor.statistics.p_value.toFixed(4)}
+              </span>
+              <span className="stat-description">
+                {predictor.statistics.p_value < 0.01 ? 'Highly significant' :
+                 predictor.statistics.p_value < 0.05 ? 'Significant' :
+                 predictor.statistics.p_value < 0.1 ? 'Marginally significant' : 'Not significant'}
+              </span>
+            </div>
+          </div>
+          <div className="predictor-interpretation">
+            <strong>Interpretation:</strong> {predictor.statistics.interpretation}
+          </div>
+        </div>
+      )}
 
       {/* Stacked Bar Chart for Z-Scores */}
       <div className="chart-section">

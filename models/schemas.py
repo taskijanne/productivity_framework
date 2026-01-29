@@ -124,6 +124,7 @@ class CPSIntervalRequest(BaseModel):
     end_time: str = Field(..., description="End time in ISO format (YYYY-MM-DDTHH:MM:SS)")
     intervals: int = Field(1, gt=0, description="Number of intervals to divide the time period into (default: 1)")
     metrics: List[MetricWeight] = Field(..., min_length=1, description="List of metrics with weights")
+    predictor: Optional[str] = Field(None, description="Optional predictor metric type to analyze how well it explains CPS (e.g., LINES_OF_CODE_AI)")
 
 
 class CPSIntervalMetricResult(BaseModel):
@@ -152,3 +153,26 @@ class CPSIntervalResult(BaseModel):
 class CPSIntervalResponse(BaseModel):
     """Model for Composite Productivity Score calculation response with intervals."""
     intervals: List[CPSIntervalResult] = Field(..., description="List of interval CPS results")
+    predictor: Optional['PredictorResult'] = Field(None, description="Predictor analysis results (only when predictor is specified)")
+
+
+class PredictorIntervalResult(BaseModel):
+    """Model for predictor z-score within a specific interval."""
+    interval_number: int = Field(..., description="Interval number (1-based)")
+    z_score: float = Field(..., description="Z-score of the predictor metric for this interval")
+
+
+class PredictorStatistics(BaseModel):
+    """Model for statistical analysis of predictor vs CPS relationship."""
+    r2: float = Field(..., description="R-squared (coefficient of determination) - how well predictor explains CPS variance")
+    correlation: float = Field(..., description="Pearson correlation coefficient between predictor z-scores and CPS")
+    slope: float = Field(..., description="Slope of linear regression (predictor z-score -> CPS)")
+    p_value: float = Field(..., description="Statistical significance of the correlation")
+    interpretation: str = Field(..., description="Human-readable interpretation of the predictor analysis")
+
+
+class PredictorResult(BaseModel):
+    """Model for complete predictor analysis results."""
+    metric_type: str = Field(..., description="The predictor metric type")
+    intervals: List[PredictorIntervalResult] = Field(..., description="Z-scores for each interval")
+    statistics: PredictorStatistics = Field(..., description="Statistical analysis of predictor vs CPS")

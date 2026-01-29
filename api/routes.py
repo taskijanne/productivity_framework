@@ -12,7 +12,7 @@ from scipy import stats
 from models import ObservationType, Observation, MetricType, MetricResult, CPSRequest, CPSResponse, IntervalMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse
 from database import get_db_connection
 from services import calculate_metric
-from services.cps_calculator import calculate_cps, calculate_cps_with_intervals
+from services.cps_calculator import calculate_cps, calculate_cps_with_intervals, calculate_cps_with_predictor
 
 
 def calculate_correlations(interval_results: list, metric_type_list: list) -> list:
@@ -375,13 +375,17 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
     
     CPS = Σ(weight_i × z_score_i) for i = 1 to n
     
+    Optionally, analyze how well a predictor metric explains the calculated CPS.
+    
     Args:
         request: CPSIntervalRequest containing start_time, end_time, intervals (optional, default=1), 
-                 and metrics with weights
+                 metrics with weights, and optional predictor metric
     
     Returns:
         CPSIntervalResponse: Contains array of interval results, each with CPS and detailed 
-                             metric results for that interval
+                             metric results for that interval. If predictor is specified, also 
+                             includes predictor analysis with z-scores and statistics (R², 
+                             correlation, slope, p-value).
         
     Validations:
         - start_time and end_time must be valid timestamps
@@ -390,6 +394,7 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
         - metrics array must contain at least one metric
         - all metric values must be valid MetricType enum values
         - weight must be between 0 and 1 (inclusive)
+        - predictor must be a valid MetricType if specified
     """
     try:
         # Validate and normalize timestamp format
@@ -439,21 +444,39 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                     detail=f"Invalid metric type '{metric_config.metric}'. Must be one of: {', '.join(valid_metrics)}"
                 )
         
+        # Validate predictor metric type if specified
+        if request.predictor is not None:
+            if request.predictor not in valid_metrics:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid predictor metric type '{request.predictor}'. Must be one of: {', '.join(valid_metrics)}"
+                )
+        
         # Convert request to dict format for service
         metrics_list = [
             {'metric': m.metric, 'weight': m.weight}
             for m in request.metrics
         ]
         
-        # Calculate CPS with intervals
-        interval_results = calculate_cps_with_intervals(
-            start_time=normalized_start,
-            end_time=normalized_end,
-            intervals=request.intervals,
-            metrics=metrics_list
-        )
-        
-        return {"intervals": interval_results}
+        # Calculate CPS - with or without predictor
+        if request.predictor is not None:
+            result = calculate_cps_with_predictor(
+                start_time=normalized_start,
+                end_time=normalized_end,
+                intervals=request.intervals,
+                metrics=metrics_list,
+                predictor=request.predictor
+            )
+            return result
+        else:
+            # Calculate CPS without predictor
+            interval_results = calculate_cps_with_intervals(
+                start_time=normalized_start,
+                end_time=normalized_end,
+                intervals=request.intervals,
+                metrics=metrics_list
+            )
+            return {"intervals": interval_results}
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

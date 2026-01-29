@@ -15,6 +15,7 @@ function ProductivityPage() {
   const [startDate, setStartDate] = useState('2025-01-01');
   const [endDate, setEndDate] = useState('2025-12-31');
   const [intervals, setIntervals] = useState(12);
+  const [predictor, setPredictor] = useState(null);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -102,7 +103,8 @@ function ProductivityPage() {
         metrics: selectedMetrics.map((m) => ({
           metric: m.metric,
           weight: m.weight
-        }))
+        })),
+        ...(predictor && { predictor: predictor })
       };
 
       const response = await fetch(`${API_BASE_URL}/cps`, {
@@ -187,7 +189,7 @@ function ProductivityPage() {
 
         <div className="form-section">
           <div className="metrics-header">
-            <h3>Metrics & Weights</h3>
+            <h3>Metrics, Weights and Predictor</h3>
             <div className="metrics-actions">
               <button 
                 className="secondary-btn"
@@ -267,6 +269,56 @@ function ProductivityPage() {
               ))}
             </div>
           )}
+
+          {/* Predictor Section */}
+          <div className="predictor-section">
+            <div className="predictor-header">
+              <h4>Predictor Analysis</h4>
+              <span className="predictor-description">
+                Analyze how well a metric explains the calculated CPS
+              </span>
+            </div>
+            <div className="predictor-controls">
+              {predictor ? (
+                <div className="predictor-selected">
+                  <div className="predictor-info">
+                    <span className="predictor-label">Predictor:</span>
+                    <select
+                      value={predictor}
+                      onChange={(e) => setPredictor(e.target.value)}
+                      className="predictor-select"
+                    >
+                      {metricTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type.replace(/_/g, ' ')}
+                        </option>
+                      ))}
+                    </select>
+                    {metricDescriptions[predictor] && (
+                      <span className="predictor-metric-description">
+                        {metricDescriptions[predictor]}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="remove-predictor-btn"
+                    onClick={() => setPredictor(null)}
+                    title="Remove predictor"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="secondary-btn add-predictor-btn"
+                  onClick={() => setPredictor(metricTypes[0] || 'LINES_OF_CODE_AI')}
+                  disabled={metricTypes.length === 0}
+                >
+                  + Add Predictor
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="form-actions">

@@ -4,9 +4,12 @@ Composite Productivity Score (CPS) calculation service.
 This module calculates a weighted composite score based on multiple metrics.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+import numpy as np
+from scipy import stats
 from services.metrics_calculator import calculate_metric
+from models.enums import MetricType
 
 
 def calculate_cps(
@@ -182,3 +185,204 @@ def calculate_cps_with_intervals(
         })
     
     return interval_results
+
+
+def calculate_predictor_statistics(
+    predictor_z_scores: List[float],
+    cps_values: List[float]
+) -> Dict[str, Any]:
+    """
+    Calculate statistical relationship between predictor z-scores and CPS values.
+    
+    Args:
+        predictor_z_scores: List of predictor z-scores for each interval
+        cps_values: List of CPS values for each interval
+        
+    Returns:
+        Dictionary containing r2, correlation, slope, p_value, and interpretation
+    """
+    predictor_arr = np.array(predictor_z_scores)
+    cps_arr = np.array(cps_values)
+    
+    # Check for sufficient data
+    n = len(predictor_arr)
+    if n < 2:
+        return {
+            'r2': 0.0,
+            'correlation': 0.0,
+            'slope': 0.0,
+            'p_value': 1.0,
+            'interpretation': "Insufficient data (need at least 2 intervals for analysis)"
+        }
+    
+    # Check for zero variance
+    if np.std(predictor_arr) == 0 or np.std(cps_arr) == 0:
+        return {
+            'r2': 0.0,
+            'correlation': 0.0,
+            'slope': 0.0,
+            'p_value': 1.0,
+            'interpretation': "Cannot compute statistics: predictor or CPS has zero variance"
+        }
+    
+    # Calculate Pearson correlation and p-value
+    correlation, p_value = stats.pearsonr(predictor_arr, cps_arr)
+    
+    # Calculate R² (coefficient of determination)
+    r2 = correlation ** 2
+    
+    # Calculate slope using linear regression
+    slope, intercept, r_value, p_val, std_err = stats.linregress(predictor_arr, cps_arr)
+    
+    # Generate interpretation
+    interpretation = _interpret_predictor_statistics(correlation, r2, p_value, n)
+    
+    return {
+        'r2': round(r2, 4),
+        'correlation': round(correlation, 4),
+        'slope': round(slope, 4),
+        'p_value': round(p_value, 4),
+        'interpretation': interpretation
+    }
+
+
+def _interpret_predictor_statistics(correlation: float, r2: float, p_value: float, sample_size: int) -> str:
+    """
+    Generate human-readable interpretation of predictor statistics.
+    
+    Args:
+        correlation: Pearson correlation coefficient
+        r2: R-squared value
+        p_value: Statistical significance
+        sample_size: Number of data points
+        
+    Returns:
+        Human-readable interpretation string
+    """
+    # Interpret R²
+    r2_pct = r2 * 100
+    if r2 >= 0.7:
+        r2_strength = "strongly"
+    elif r2 >= 0.5:
+        r2_strength = "moderately"
+    elif r2 >= 0.3:
+        r2_strength = "weakly"
+    else:
+        r2_strength = "poorly"
+    
+    # Interpret correlation direction
+    if correlation > 0:
+        direction = "positive"
+    elif correlation < 0:
+        direction = "negative"
+    else:
+        direction = "no"
+    
+    # Interpret statistical significance
+    if p_value < 0.01:
+        significance = "highly significant (p < 0.01)"
+    elif p_value < 0.05:
+        significance = "significant (p < 0.05)"
+    elif p_value < 0.1:
+        significance = "marginally significant (p < 0.1)"
+    else:
+        significance = "not statistically significant"
+    
+    return (
+        f"The predictor {r2_strength} explains CPS variance (R²={r2_pct:.1f}%), "
+        f"with a {direction} correlation. The relationship is {significance}. "
+        f"Based on {sample_size} intervals."
+    )
+
+
+def calculate_cps_with_predictor(
+    start_time: str,
+    end_time: str,
+    intervals: int,
+    metrics: List[Dict[str, Any]],
+    predictor: str,
+    db_name: str = "productivity_framework.db"
+) -> Dict[str, Any]:
+    """
+    Calculate CPS with intervals and analyze predictor relationship.
+    
+    Args:
+        start_time: Start of the time period (normalized/SQLite format)
+        end_time: End of the time period (normalized/SQLite format)
+        intervals: Number of intervals to divide the time period into
+        metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
+        predictor: The predictor metric type to analyze
+        db_name: Name of the database file
+        
+    Returns:
+        Dictionary containing:
+        - intervals: List of CPS interval results
+        - predictor: Predictor analysis with intervals and statistics
+    """
+    # First calculate CPS for all intervals
+    interval_results = calculate_cps_with_intervals(
+        start_time=start_time,
+        end_time=end_time,
+        intervals=intervals,
+        metrics=metrics,
+        db_name=db_name
+    )
+    
+    # Parse start and end times for predictor calculation
+    start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+    end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+    
+    # Calculate interval duration
+    total_duration = end_dt - start_dt
+    interval_duration = total_duration / intervals
+    
+    # Calculate predictor metric for each interval
+    predictor_intervals = []
+    predictor_z_scores = []
+    cps_values = []
+    
+    for i in range(intervals):
+        interval_start_dt = start_dt + (interval_duration * i)
+        interval_end_dt = start_dt + (interval_duration * (i + 1))
+        
+        # For the last interval, ensure we use the exact end_time
+        if i == intervals - 1:
+            interval_end_dt = end_dt
+        else:
+            # Subtract 1 second from end to avoid overlap
+            interval_end_dt = interval_end_dt - timedelta(seconds=1)
+        
+        interval_start_str = interval_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        interval_end_str = interval_end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate predictor metric for this interval
+        predictor_result = calculate_metric(
+            metric_type=predictor,
+            start_time=interval_start_str,
+            end_time=interval_end_str,
+            db_name=db_name,
+            population_start_time=start_time,
+            population_end_time=end_time
+        )
+        
+        z_score = predictor_result.get('z_score', 0.0)
+        
+        predictor_intervals.append({
+            'interval_number': i + 1,
+            'z_score': z_score
+        })
+        
+        predictor_z_scores.append(z_score)
+        cps_values.append(interval_results[i]['cps'])
+    
+    # Calculate statistics between predictor and CPS
+    statistics = calculate_predictor_statistics(predictor_z_scores, cps_values)
+    
+    return {
+        'intervals': interval_results,
+        'predictor': {
+            'metric_type': predictor,
+            'intervals': predictor_intervals,
+            'statistics': statistics
+        }
+    }
