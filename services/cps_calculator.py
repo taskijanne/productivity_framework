@@ -140,11 +140,14 @@ def calculate_cps_with_intervals(
             weight = metric_config['weight']
             
             # Calculate the metric
+            # Pass the full user-specified date range as the population for z_score calculation
             metric_result = calculate_metric(
                 metric_type=metric_type,
                 start_time=interval_start_str,
                 end_time=interval_end_str,
-                db_name=db_name
+                db_name=db_name,
+                population_start_time=start_time,
+                population_end_time=end_time
             )
             
             # Get z-score from result

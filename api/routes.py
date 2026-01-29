@@ -327,9 +327,16 @@ def get_metrics(
             interval_end_str = interval_end_dt.strftime("%Y-%m-%d %H:%M:%S")
             
             # Calculate all metrics for this interval
+            # Pass the full user-specified date range as the population for z_score calculation
             metrics_for_interval = []
             for metric_type in metric_type_list:
-                result = calculate_metric(metric_type, interval_start_str, interval_end_str)
+                result = calculate_metric(
+                    metric_type, 
+                    interval_start_str, 
+                    interval_end_str,
+                    population_start_time=normalized_start,
+                    population_end_time=normalized_end
+                )
                 
                 # Add metric type
                 result["metric_type"] = metric_type
