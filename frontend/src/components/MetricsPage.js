@@ -7,6 +7,7 @@ function MetricsPage() {
   const [metricTypes, setMetricTypes] = useState([]);
   const [xAxisMetric, setXAxisMetric] = useState('');
   const [yAxisMetric, setYAxisMetric] = useState('');
+  const [yAxisMetrics, setYAxisMetrics] = useState([]); // For multiple Y-axes when Time is X-axis
   const [startDate, setStartDate] = useState('2025-01-01');
   const [endDate, setEndDate] = useState('2025-12-31');
   const [intervals, setIntervals] = useState(12);
@@ -14,6 +15,8 @@ function MetricsPage() {
   const [correlations, setCorrelations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const isTimeXAxis = xAxisMetric === 'Time';
 
   // Fetch available metric types on component mount
   useEffect(() => {
@@ -44,16 +47,25 @@ function MetricsPage() {
     fetchMetricTypes();
   }, []);
 
+  // Initialize yAxisMetrics when switching to Time X-axis
+  useEffect(() => {
+    if (isTimeXAxis && yAxisMetrics.length === 0 && metricTypes.length > 0) {
+      setYAxisMetrics([metricTypes[0]]);
+    }
+  }, [isTimeXAxis, metricTypes, yAxisMetrics.length]);
+
   const formatDateForInput = (date) => {
     return date.toISOString().split('T')[0];
   };
 
-  const formatDateTimeForAPI = (dateStr) => {
-    return `${dateStr}T00:00:00`;
+  const formatDateTimeForAPI = (dateStr, isEndDate = false) => {
+    return isEndDate ? `${dateStr}T23:59:59` : `${dateStr}T00:00:00`;
   };
 
   const handleCalculate = async () => {
-    if (!xAxisMetric || !yAxisMetric || !startDate || !endDate) {
+    const effectiveYMetrics = isTimeXAxis ? yAxisMetrics : [yAxisMetric];
+    
+    if (!xAxisMetric || effectiveYMetrics.length === 0 || !startDate || !endDate) {
       setError('Please fill in all required fields');
       return;
     }
@@ -62,12 +74,12 @@ function MetricsPage() {
     setError(null);
 
     try {
-      // If Time is selected for X-axis, only pass Y-axis metric
-      const metricTypesParam = xAxisMetric === 'Time' 
-        ? yAxisMetric 
+      // If Time is selected for X-axis, pass all selected Y-axis metrics
+      const metricTypesParam = isTimeXAxis 
+        ? effectiveYMetrics.join(',') 
         : `${xAxisMetric},${yAxisMetric}`;
       const startTimeParam = formatDateTimeForAPI(startDate);
-      const endTimeParam = formatDateTimeForAPI(endDate);
+      const endTimeParam = formatDateTimeForAPI(endDate, true);
       
       const url = `${API_BASE_URL}/metrics?metric_types=${metricTypesParam}&start_time=${startTimeParam}&end_time=${endTimeParam}&intervals=${intervals}`;
       
@@ -86,6 +98,27 @@ function MetricsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle adding/removing Y-axis metrics for multi-select
+  const handleAddYAxisMetric = () => {
+    // Find first metric not already selected
+    const availableMetric = metricTypes.find(
+      (m) => !yAxisMetrics.includes(m)
+    );
+    if (availableMetric) {
+      setYAxisMetrics([...yAxisMetrics, availableMetric]);
+    }
+  };
+
+  const handleRemoveYAxisMetric = (index) => {
+    setYAxisMetrics(yAxisMetrics.filter((_, i) => i !== index));
+  };
+
+  const handleYAxisMetricChange = (index, value) => {
+    const updated = [...yAxisMetrics];
+    updated[index] = value;
+    setYAxisMetrics(updated);
   };
 
   return (
@@ -112,19 +145,59 @@ function MetricsPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="y-axis-metric">Y-Axis Metric</label>
-            <select
-              id="y-axis-metric"
-              value={yAxisMetric}
-              onChange={(e) => setYAxisMetric(e.target.value)}
-            >
-              <option value="">Select metric...</option>
-              {metricTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
+            <label htmlFor="y-axis-metric">
+              Y-Axis Metric{isTimeXAxis && yAxisMetrics.length > 1 ? 's' : ''}
+            </label>
+            {isTimeXAxis ? (
+              <div className="y-axis-metrics-list">
+                {yAxisMetrics.map((metric, index) => (
+                  <div key={index} className="y-axis-metric-row">
+                    <select
+                      value={metric}
+                      onChange={(e) => handleYAxisMetricChange(index, e.target.value)}
+                    >
+                      {metricTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type.replace(/_/g, ' ')}
+                        </option>
+                      ))}
+                    </select>
+                    {yAxisMetrics.length > 1 && (
+                      <button
+                        type="button"
+                        className="remove-metric-btn"
+                        onClick={() => handleRemoveYAxisMetric(index)}
+                        title="Remove metric"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {yAxisMetrics.length < metricTypes.length && (
+                  <button
+                    type="button"
+                    className="add-metric-btn"
+                    onClick={handleAddYAxisMetric}
+                  >
+                    + Add metric
+                  </button>
+                )}
+              </div>
+            ) : (
+              <select
+                id="y-axis-metric"
+                value={yAxisMetric}
+                onChange={(e) => setYAxisMetric(e.target.value)}
+              >
+                <option value="">Select metric...</option>
+                {metricTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -185,6 +258,7 @@ function MetricsPage() {
             data={results} 
             xAxisMetric={xAxisMetric} 
             yAxisMetric={yAxisMetric}
+            yAxisMetrics={isTimeXAxis ? yAxisMetrics : [yAxisMetric]}
             correlations={correlations}
           />
         </div>

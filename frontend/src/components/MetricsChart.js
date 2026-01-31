@@ -11,9 +11,22 @@ import {
   ReferenceLine,
   Line,
   ComposedChart,
+  Legend,
 } from 'recharts';
 
-function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
+// Color palette for multiple Y-axes
+const AXIS_COLORS = [
+  '#e94560',
+  '#00C49F',
+  '#8884d8',
+  '#ffc658',
+  '#ff7300',
+  '#82ca9d',
+  '#FFBB28',
+  '#FF8042',
+];
+
+function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], correlations = [] }) {
   const [hoveredPoint, setHoveredPoint] = useState(null);
 
   // Find the correlation for the current X and Y metrics
@@ -48,13 +61,14 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
 
   // Check if X-axis is Time
   const isTimeXAxis = xAxisMetric === 'Time';
+  const hasMultipleYAxes = isTimeXAxis && yAxisMetrics.length > 1;
 
   // Transform the API response data into chart-friendly format
   const chartData = data.map((interval) => {
     const xMetric = isTimeXAxis ? null : interval.metrics.find((m) => m.metric_type === xAxisMetric);
     const yMetric = interval.metrics.find((m) => m.metric_type === yAxisMetric);
 
-    return {
+    const dataPoint = {
       interval_number: interval.interval_number,
       start_time: interval.start_time,
       end_time: interval.end_time,
@@ -63,6 +77,17 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
       xMetricData: xMetric,
       yMetricData: yMetric,
     };
+
+    // Add data for all Y-axis metrics when Time is X-axis
+    if (isTimeXAxis && yAxisMetrics && yAxisMetrics.length > 0) {
+      yAxisMetrics.forEach((metricType) => {
+        const metric = interval.metrics.find((m) => m.metric_type === metricType);
+        dataPoint[metricType] = metric ? metric.mean_value : 0;
+        dataPoint[`${metricType}_data`] = metric;
+      });
+    }
+
+    return dataPoint;
   });
 
   // Generate colors for each point based on interval number
@@ -100,10 +125,23 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
                 <span>{point.x?.toFixed(2)}</span>
               </div>
             )}
-            <div className="tooltip-metric">
-              <strong>{yAxisMetric.replace(/_/g, ' ')}:</strong>
-              <span>{point.y?.toFixed(2)}</span>
-            </div>
+            {hasMultipleYAxes ? (
+              yAxisMetrics.map((metricType, index) => (
+                <div key={metricType} className="tooltip-metric">
+                  <strong style={{ color: AXIS_COLORS[index % AXIS_COLORS.length] }}>
+                    {metricType.replace(/_/g, ' ')}:
+                  </strong>
+                  <span style={{ color: AXIS_COLORS[index % AXIS_COLORS.length] }}>
+                    {point[metricType]?.toFixed(2)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="tooltip-metric">
+                <strong>{yAxisMetric.replace(/_/g, ' ')}:</strong>
+                <span>{point.y?.toFixed(2)}</span>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -120,11 +158,153 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
   };
 
   const formatAxisLabel = (metric) => {
-    return metric.replace(/_/g, ' ');
+    return metric ? metric.replace(/_/g, ' ') : '';
   };
 
   // Calculate trend line
   const trendLineData = calculateTrendLine(chartData);
+
+  // Render multi-axis time series chart
+  const renderMultiAxisChart = () => (
+    <ResponsiveContainer width="100%" height={400}>
+      <ComposedChart
+        data={chartData}
+        margin={{ top: 20, right: yAxisMetrics.length > 1 ? 80 : 30, bottom: 60, left: 80 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+        <XAxis
+          dataKey="interval_number"
+          tick={{ fill: '#ccc' }}
+          label={{
+            value: 'Time (Interval)',
+            position: 'bottom',
+            offset: 40,
+            fill: '#ccc',
+          }}
+        />
+        {/* First Y-axis (left) */}
+        <YAxis
+          yAxisId="left"
+          orientation="left"
+          tick={{ fill: AXIS_COLORS[0] }}
+          tickFormatter={(value) => value.toFixed(1)}
+          label={{
+            value: formatAxisLabel(yAxisMetrics[0]),
+            angle: -90,
+            position: 'left',
+            offset: 55,
+            fill: AXIS_COLORS[0],
+          }}
+          domain={['auto', 'auto']}
+        />
+        {/* Second Y-axis (right) - only if more than one metric */}
+        {yAxisMetrics.length > 1 && (
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tick={{ fill: AXIS_COLORS[1] }}
+            tickFormatter={(value) => value.toFixed(1)}
+            label={{
+              value: formatAxisLabel(yAxisMetrics[1]),
+              angle: 90,
+              position: 'right',
+              offset: 55,
+              fill: AXIS_COLORS[1],
+            }}
+            domain={['auto', 'auto']}
+          />
+        )}
+        <Tooltip content={<CustomTooltip />} />
+        <Legend 
+          wrapperStyle={{ color: '#ccc' }}
+          formatter={(value) => <span style={{ color: '#ccc' }}>{value}</span>}
+        />
+        {/* Render lines for each metric */}
+        {yAxisMetrics.map((metricType, index) => (
+          <Line
+            key={metricType}
+            type="monotone"
+            dataKey={metricType}
+            name={formatAxisLabel(metricType)}
+            yAxisId={index === 0 ? 'left' : index === 1 ? 'right' : 'left'}
+            stroke={AXIS_COLORS[index % AXIS_COLORS.length]}
+            strokeWidth={2}
+            dot={{ fill: AXIS_COLORS[index % AXIS_COLORS.length], r: 4 }}
+            activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
+          />
+        ))}
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+
+  // Render single-axis chart (original behavior)
+  const renderSingleAxisChart = () => (
+    <ResponsiveContainer width="100%" height={400}>
+      <ComposedChart
+        margin={{ top: 20, right: 30, bottom: 60, left: 80 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+        <XAxis
+          type="number"
+          dataKey="x"
+          name={xAxisMetric}
+          tick={{ fill: '#ccc' }}
+          tickFormatter={(value) => isTimeXAxis ? Math.round(value) : value.toFixed(2)}
+          label={{
+            value: isTimeXAxis ? 'Time (Interval)' : formatAxisLabel(xAxisMetric),
+            position: 'bottom',
+            offset: 40,
+            fill: '#ccc',
+          }}
+          domain={['dataMin', 'dataMax']}
+        />
+        <YAxis
+          type="number"
+          dataKey="y"
+          name={yAxisMetric}
+          tick={{ fill: '#ccc' }}
+          tickFormatter={(value) => value.toFixed(2)}
+          label={{
+            value: formatAxisLabel(yAxisMetric),
+            angle: -90,
+            position: 'left',
+            offset: 55,
+            fill: '#ccc',
+          }}
+          domain={['dataMin', 'dataMax']}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        {trendLineData.length > 0 && (
+          <Line
+            data={trendLineData}
+            type="linear"
+            dataKey="y"
+            stroke="#e94560"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+            legendType="none"
+            isAnimationActive={false}
+          />
+        )}
+        <Scatter
+          data={chartData}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          {chartData.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={getColor(index)}
+              stroke={hoveredPoint?.interval_number === entry.interval_number ? '#fff' : 'none'}
+              strokeWidth={hoveredPoint?.interval_number === entry.interval_number ? 2 : 0}
+              r={hoveredPoint?.interval_number === entry.interval_number ? 10 : 7}
+            />
+          ))}
+        </Scatter>
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
 
   return (
     <div className="metrics-chart-container">
@@ -138,71 +318,11 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, correlations = [] }) {
       )}
       
       <div className="chart-wrapper">
-        <ResponsiveContainer width="100%" height={400}>
-          <ComposedChart
-            margin={{ top: 20, right: 30, bottom: 60, left: 80 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis
-              type="number"
-              dataKey="x"
-              name={xAxisMetric}
-              tick={{ fill: '#ccc' }}
-              tickFormatter={(value) => isTimeXAxis ? Math.round(value) : value.toFixed(2)}
-              label={{
-                value: isTimeXAxis ? 'Time (Interval)' : formatAxisLabel(xAxisMetric),
-                position: 'bottom',
-                offset: 40,
-                fill: '#ccc',
-              }}
-              domain={['dataMin', 'dataMax']}
-            />
-            <YAxis
-              type="number"
-              dataKey="y"
-              name={yAxisMetric}
-              tick={{ fill: '#ccc' }}
-              tickFormatter={(value) => value.toFixed(2)}
-              label={{
-                value: formatAxisLabel(yAxisMetric),
-                angle: -90,
-                position: 'left',
-                offset: 55,
-                fill: '#ccc',
-              }}
-              domain={['dataMin', 'dataMax']}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            {trendLineData.length > 0 && (
-              <Line
-                data={trendLineData}
-                type="linear"
-                dataKey="y"
-                stroke="#e94560"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                legendType="none"
-                isAnimationActive={false}
-              />
-            )}
-            <Scatter
-              data={chartData}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={getColor(index)}
-                  stroke={hoveredPoint?.interval_number === entry.interval_number ? '#fff' : 'none'}
-                  strokeWidth={hoveredPoint?.interval_number === entry.interval_number ? 2 : 0}
-                  r={hoveredPoint?.interval_number === entry.interval_number ? 10 : 7}
-                />
-              ))}
-            </Scatter>
-          </ComposedChart>
-        </ResponsiveContainer>
+        {isTimeXAxis && (!yAxisMetrics || yAxisMetrics.length === 0) ? (
+          <div className="no-data-message">
+            Please select Y-axis metrics and click Calculate.
+          </div>
+        ) : isTimeXAxis ? renderMultiAxisChart() : renderSingleAxisChart()}
       </div>
 
       {!isTimeXAxis && currentCorrelation && (

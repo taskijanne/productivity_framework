@@ -142,6 +142,73 @@ body {
   cursor: pointer;
 }
 
+/* Y-axis metrics list for multiple metrics */
+.y-axis-metrics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.y-axis-metric-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.y-axis-metric-row select {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #2d3a5a;
+  border-radius: 8px;
+  background-color: #0f0f23;
+  color: #eaeaea;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.y-axis-metric-row select:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.remove-metric-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e94560;
+  border-radius: 6px;
+  background-color: transparent;
+  color: #e94560;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-metric-btn:hover {
+  background-color: #e94560;
+  color: #fff;
+}
+
+.add-metric-btn {
+  padding: 0.5rem 1rem;
+  border: 1px dashed #2d3a5a;
+  border-radius: 8px;
+  background-color: transparent;
+  color: #a0a0a0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 0.25rem;
+}
+
+.add-metric-btn:hover {
+  border-color: #e94560;
+  color: #e94560;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
