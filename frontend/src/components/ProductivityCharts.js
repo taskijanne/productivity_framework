@@ -124,14 +124,28 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 {dataPoint.trend?.toFixed(4)}
               </span>
             </div>
-            {predictor && dataPoint.predictor_z_score !== undefined && (
-              <div className="tooltip-metric">
-                <strong style={{ color: '#00C49F' }}>Predictor Z:</strong>
-                <span style={{ color: '#00C49F' }}>
-                  {dataPoint.predictor_z_score.toFixed(4)}
-                </span>
-              </div>
-            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom tooltip for Predictor chart
+  const PredictorTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const dataPoint = payload[0].payload;
+      return (
+        <div className="chart-tooltip">
+          <p className="tooltip-title">Interval {dataPoint.interval_number}</p>
+          <p className="tooltip-time">{dataPoint.fullDate}</p>
+          <div className="tooltip-metrics">
+            <div className="tooltip-metric">
+              <strong style={{ color: '#00C49F' }}>Predictor Z-Score:</strong>
+              <span style={{ color: '#00C49F' }}>
+                {dataPoint.predictor_z_score?.toFixed(4)}
+              </span>
+            </div>
           </div>
         </div>
       );
@@ -240,7 +254,6 @@ function ProductivityCharts({ data, selectedMetrics }) {
         <p className="chart-description">
           The CPS combines weighted z-scores of all selected metrics. 
           Positive values indicate above-average performance.
-          {predictor && ` The predictor (${predictor.metric_type.replace(/_/g, ' ')}) z-score is shown for comparison.`}
         </p>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={300}>
@@ -281,21 +294,52 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 dot={false}
                 activeDot={false}
               />
-              {predictor && (
-                <Line
-                  type="monotone"
-                  dataKey="predictor_z_score"
-                  name={`Predictor (${predictor.metric_type.replace(/_/g, ' ')})`}
-                  stroke="#00C49F"
-                  strokeWidth={2}
-                  dot={{ fill: '#00C49F', strokeWidth: 2, r: 4 }}
-                  activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
-                />
-              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Predictor Line Chart - Only shown when predictor is selected */}
+      {predictor && (
+        <div className="chart-section">
+          <h3>Predictor: {predictor.metric_type.replace(/_/g, ' ')} Over Time</h3>
+          <p className="chart-description">
+            Z-score of the selected predictor metric across intervals.
+          </p>
+          <div className="chart-wrapper">
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={cpsChartDataWithTrend} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fill: '#ccc' }}
+                  axisLine={{ stroke: '#444' }}
+                />
+                <YAxis 
+                  tick={{ fill: '#ccc' }}
+                  axisLine={{ stroke: '#444' }}
+                  tickFormatter={(value) => value.toFixed(2)}
+                />
+                <Tooltip content={<PredictorTooltip />} />
+                <Legend 
+                  wrapperStyle={{ color: '#ccc' }}
+                  formatter={(value) => <span style={{ color: '#ccc' }}>{value}</span>}
+                />
+                <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                <Line
+                  type="monotone"
+                  dataKey="predictor_z_score"
+                  name={`${predictor.metric_type.replace(/_/g, ' ')} Z-Score`}
+                  stroke="#00C49F"
+                  strokeWidth={3}
+                  dot={{ fill: '#00C49F', strokeWidth: 2, r: 6 }}
+                  activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Predictor Statistics */}
       {predictor && predictor.statistics && (
