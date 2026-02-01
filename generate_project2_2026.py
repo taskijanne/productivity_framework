@@ -56,16 +56,16 @@ DEGRADATION = {
         'commits_factor': 0.95,  # slightly fewer productive commits
         'mttr_factor': 1.5,  # 50% longer recovery (unfamiliar code)
         'lead_time_factor': 1.4,  # 40% longer lead time (more review/rework)
-        'ai_acceptance_rate': 0.88,  # acceptance stays high
+        'ai_acceptance_rate': 0.86,  # acceptance stays high (not learning)
         'ai_rework_rate': 0.28,  # rework becoming visible
     },
-    'Q3': {  # Getting worse - team doubles down on AI instead of fixing process
+    'Q3': {  # Getting worse - team still not adjusting
         'deployment_factor': 0.65,  # 35% fewer deployments
         'failure_rate': 0.44,  # high failure rate
         'commits_factor': 0.80,  # fewer commits, more fixing
         'mttr_factor': 2.0,  # 2x longer recovery
         'lead_time_factor': 1.8,  # 80% longer lead time
-        'ai_acceptance_rate': 0.91,  # still high acceptance (not learning)
+        'ai_acceptance_rate': 0.85,  # flat high acceptance (never learns)
         'ai_rework_rate': 0.38,  # high rework rate
     },
     'Q4': {  # Bad situation persists - clear productivity decline
@@ -74,7 +74,7 @@ DEGRADATION = {
         'commits_factor': 0.70,  # significantly fewer commits
         'mttr_factor': 2.5,  # 2.5x longer recovery
         'lead_time_factor': 2.2,  # 2.2x longer lead time
-        'ai_acceptance_rate': 0.92,  # still accepting blindly
+        'ai_acceptance_rate': 0.86,  # still accepting blindly (flat)
         'ai_rework_rate': 0.45,  # very high rework
     },
 }
