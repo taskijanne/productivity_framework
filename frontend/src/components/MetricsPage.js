@@ -3,7 +3,7 @@ import MetricsChart from './MetricsChart';
 
 const API_BASE_URL = 'http://localhost:8000';
 
-function MetricsPage() {
+function MetricsPage({ projectId }) {
   const [metricTypes, setMetricTypes] = useState([]);
   const [xAxisMetric, setXAxisMetric] = useState('');
   const [yAxisMetric, setYAxisMetric] = useState('');
@@ -47,6 +47,13 @@ function MetricsPage() {
     fetchMetricTypes();
   }, []);
 
+  // Clear results when project changes
+  useEffect(() => {
+    setResults(null);
+    setCorrelations([]);
+    setError(null);
+  }, [projectId]);
+
   // Initialize yAxisMetrics when switching to Time X-axis
   useEffect(() => {
     if (isTimeXAxis && yAxisMetrics.length === 0 && metricTypes.length > 0) {
@@ -81,7 +88,7 @@ function MetricsPage() {
       const startTimeParam = formatDateTimeForAPI(startDate);
       const endTimeParam = formatDateTimeForAPI(endDate, true);
       
-      const url = `${API_BASE_URL}/metrics?metric_types=${metricTypesParam}&start_time=${startTimeParam}&end_time=${endTimeParam}&intervals=${intervals}`;
+      const url = `${API_BASE_URL}/metrics?project_id=${projectId}&metric_types=${metricTypesParam}&start_time=${startTimeParam}&end_time=${endTimeParam}&intervals=${intervals}`;
       
       const response = await fetch(url);
       if (!response.ok) {

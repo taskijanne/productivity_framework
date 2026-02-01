@@ -3,7 +3,7 @@ import ProductivityCharts from './ProductivityCharts';
 
 const API_BASE_URL = 'http://localhost:8000';
 
-function ProductivityPage() {
+function ProductivityPage({ projectId }) {
   const [metricTypes, setMetricTypes] = useState([]);
   const [metricDescriptions, setMetricDescriptions] = useState({});
   const [selectedMetrics, setSelectedMetrics] = useState([
@@ -40,6 +40,12 @@ function ProductivityPage() {
 
     fetchMetricTypes();
   }, []);
+
+  // Clear results when project changes
+  useEffect(() => {
+    setResults(null);
+    setError(null);
+  }, [projectId]);
 
   const formatDateForInput = (date) => {
     return date.toISOString().split('T')[0];
@@ -97,6 +103,7 @@ function ProductivityPage() {
 
     try {
       const requestBody = {
+        project_id: projectId,
         start_time: formatDateTimeForAPI(startDate),
         end_time: formatDateTimeForAPI(endDate, true),
         intervals: intervals,

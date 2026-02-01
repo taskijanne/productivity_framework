@@ -36,6 +36,12 @@ body {
   font-weight: 600;
 }
 
+.navbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
 .navbar-tabs {
   display: flex;
   gap: 0.5rem;
@@ -60,6 +66,52 @@ body {
 .navbar-tab.active {
   color: #e94560;
   border-bottom-color: #e94560;
+}
+
+/* Project Selector in Navbar */
+.navbar-project-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-project-selector label {
+  color: #a0a0a0;
+  font-size: 0.9rem;
+}
+
+.project-select {
+  background-color: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  color: #eaeaea;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 150px;
+  transition: all 0.3s ease;
+}
+
+.project-select:hover {
+  border-color: #e94560;
+}
+
+.project-select:focus {
+  outline: none;
+  border-color: #e94560;
+  box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.2);
+}
+
+.navbar-project-selector .loading-text,
+.navbar-project-selector .error-text {
+  color: #a0a0a0;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.navbar-project-selector .error-text {
+  color: #e94560;
+  cursor: help;
 }
 
 /* Main Content */

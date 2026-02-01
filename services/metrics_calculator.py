@@ -19,17 +19,19 @@ def calculate_metric(
     metric_type: str,
     start_time: str,
     end_time: str,
+    project_id: int,
     db_name: str = "productivity_framework.db",
     population_start_time: str = None,
     population_end_time: str = None
 ) -> Dict[str, Any]:
     """
-    Calculate a metric for a given time period.
+    Calculate a metric for a given time period and project.
     
     Args:
         metric_type: The type of metric to calculate
         start_time: Start of the time period (ISO format)
         end_time: End of the time period (ISO format)
+        project_id: The project ID to filter observations
         db_name: Name of the database file
         population_start_time: Start of the population date range for z_score calculation (defaults to start_time)
         population_end_time: End of the population date range for z_score calculation (defaults to end_time)
@@ -63,7 +65,7 @@ def calculate_metric(
     }
     
     calculator = calculators[metric_enum]
-    result = calculator(start_time, end_time, db_name, population_start_time, population_end_time)
+    result = calculator(start_time, end_time, project_id, db_name, population_start_time, population_end_time)
     
     # Apply z-score inversion for metrics where lower values are better
     if MetricType.is_inverted_metric(metric_type):
@@ -141,6 +143,7 @@ def _calculate_z_score_metrics(
 
 def _get_observations_df(
     observation_type: str,
+    project_id: int,
     db_name: str,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None
@@ -150,6 +153,7 @@ def _get_observations_df(
     
     Args:
         observation_type: Type of observation to retrieve
+        project_id: The project ID to filter observations
         db_name: Database name
         start_time: Optional start time filter
         end_time: Optional end time filter
@@ -159,8 +163,8 @@ def _get_observations_df(
     """
     conn = get_db_connection(db_name)
     
-    query = "SELECT * FROM observations WHERE type = ?"
-    params = [observation_type]
+    query = "SELECT * FROM observations WHERE type = ? AND project_id = ?"
+    params = [observation_type, project_id]
     
     if start_time and end_time:
         query += " AND timestamp BETWEEN ? AND ?"
@@ -172,31 +176,31 @@ def _get_observations_df(
     return df
 
 
-def calculate_satisfaction(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_satisfaction(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate SATISFACTION metric based on SATISFACTION observations."""
-    timeframe_df = _get_observations_df("SATISFACTION", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("SATISFACTION", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("SATISFACTION", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("SATISFACTION", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_retention(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_retention(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate RETENTION metric based on TEAM_SIZE_CHANGE observations."""
-    timeframe_df = _get_observations_df("TEAM_SIZE_CHANGE", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("TEAM_SIZE_CHANGE", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("TEAM_SIZE_CHANGE", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("TEAM_SIZE_CHANGE", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_deployment_frequency(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_deployment_frequency(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate DEPLOYMENT_FREQUENCY metric based on daily deployment count.
     For each day in the period, count the number of deployments (0 if none).
@@ -209,14 +213,14 @@ def calculate_deployment_frequency(start_time: str, end_time: str, db_name: str,
     
     # Get deployments in timeframe
     deployments_tf = pd.read_sql_query(
-        "SELECT timestamp FROM observations WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT timestamp FROM observations WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get deployments for population (within the user-specified date range)
     deployments_pop = pd.read_sql_query(
-        "SELECT timestamp FROM observations WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT timestamp FROM observations WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     conn.close()
@@ -284,7 +288,7 @@ def calculate_deployment_frequency(start_time: str, end_time: str, db_name: str,
     return result
 
 
-def calculate_change_failure_rate(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_change_failure_rate(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate CHANGE_FAILURE_RATE metric.
     Rate = (Number of DEPLOYMENT_FAILURE) / (Total DEPLOYMENT)
@@ -301,23 +305,23 @@ def calculate_change_failure_rate(start_time: str, end_time: str, db_name: str, 
     
     # Get all deployments in timeframe - this is the "resolving observation"
     deployments_tf = pd.read_sql_query(
-        "SELECT id, timestamp FROM observations WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT id, timestamp FROM observations WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get all failures (regardless of timestamp) to check against deployments
     failures_tf = pd.read_sql_query(
-        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE'",
-        conn
+        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE' AND project_id = ?",
+        conn, params=[project_id]
     )
     
     # Get deployments and failures for population (within user-specified date range)
     deployments_pop = pd.read_sql_query(
-        "SELECT id, timestamp FROM observations WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT id, timestamp FROM observations WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     failures_pop = pd.read_sql_query(
-        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE'", conn
+        "SELECT deployment_id, timestamp FROM observations WHERE type = 'DEPLOYMENT_FAILURE' AND project_id = ?", conn, params=[project_id]
     )
     
     conn.close()
@@ -344,7 +348,7 @@ def calculate_change_failure_rate(start_time: str, end_time: str, db_name: str, 
     return result
 
 
-def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_mean_time_to_recover(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate MEAN_TIME_TO_RECOVER metric.
     Average time (in minutes) between DEPLOYMENT_FAILURE and DEPLOYMENT_FAILURE_FIX.
@@ -361,8 +365,8 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str,
     fixes_tf = pd.read_sql_query(
         """SELECT deployment_failure_id, timestamp 
            FROM observations 
-           WHERE type = 'DEPLOYMENT_FAILURE_FIX' AND timestamp BETWEEN ? AND ?""",
-        conn, params=[start_time, end_time]
+           WHERE type = 'DEPLOYMENT_FAILURE_FIX' AND project_id = ? AND timestamp BETWEEN ? AND ?""",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get the failures related to fixes in timeframe (regardless of failure timestamp)
@@ -374,9 +378,9 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str,
             failures_tf = pd.read_sql_query(
                 f"""SELECT id, deployment_failure_id, timestamp 
                    FROM observations 
-                   WHERE type = 'DEPLOYMENT_FAILURE' 
+                   WHERE type = 'DEPLOYMENT_FAILURE' AND project_id = ?
                    AND (deployment_failure_id IN ({placeholders}) OR id IN ({placeholders}))""",
-                conn, params=failure_ids + failure_ids
+                conn, params=[project_id] + failure_ids + failure_ids
             )
         else:
             failures_tf = pd.DataFrame(columns=['id', 'deployment_failure_id', 'timestamp'])
@@ -387,8 +391,8 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str,
     fixes_pop = pd.read_sql_query(
         """SELECT deployment_failure_id, timestamp 
            FROM observations 
-           WHERE type = 'DEPLOYMENT_FAILURE_FIX' AND timestamp BETWEEN ? AND ?""",
-        conn, params=[pop_start, pop_end]
+           WHERE type = 'DEPLOYMENT_FAILURE_FIX' AND project_id = ? AND timestamp BETWEEN ? AND ?""",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     # Get the failures related to population fixes (regardless of failure timestamp)
@@ -399,9 +403,9 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str,
             failures_pop = pd.read_sql_query(
                 f"""SELECT id, deployment_failure_id, timestamp 
                    FROM observations 
-                   WHERE type = 'DEPLOYMENT_FAILURE' 
+                   WHERE type = 'DEPLOYMENT_FAILURE' AND project_id = ?
                    AND (deployment_failure_id IN ({placeholders}) OR id IN ({placeholders}))""",
-                conn, params=failure_ids_pop + failure_ids_pop
+                conn, params=[project_id] + failure_ids_pop + failure_ids_pop
             )
         else:
             failures_pop = pd.DataFrame(columns=['id', 'deployment_failure_id', 'timestamp'])
@@ -437,7 +441,7 @@ def calculate_mean_time_to_recover(start_time: str, end_time: str, db_name: str,
     return result
 
 
-def calculate_lines_of_code(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_lines_of_code(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate LINES_OF_CODE metric based on daily sum of lines of code.
     For each day in the period, sum the lines of code (0 if none).
@@ -450,14 +454,14 @@ def calculate_lines_of_code(start_time: str, end_time: str, db_name: str, popula
     
     # Get lines of code in timeframe
     loc_tf = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get lines of code for population (within the user-specified date range)
     loc_pop = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     conn.close()
@@ -511,7 +515,7 @@ def calculate_lines_of_code(start_time: str, end_time: str, db_name: str, popula
     return result
 
 
-def calculate_number_of_commits(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_number_of_commits(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate NUMBER_OF_COMMITS metric based on daily commit count.
     For each day in the period, count the number of commits (0 if none).
@@ -524,14 +528,14 @@ def calculate_number_of_commits(start_time: str, end_time: str, db_name: str, po
     
     # Get commits in timeframe
     commits_tf = pd.read_sql_query(
-        "SELECT timestamp FROM observations WHERE type = 'COMMIT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT timestamp FROM observations WHERE type = 'COMMIT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get commits for population (within the user-specified date range)
     commits_pop = pd.read_sql_query(
-        "SELECT timestamp FROM observations WHERE type = 'COMMIT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT timestamp FROM observations WHERE type = 'COMMIT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     conn.close()
@@ -599,43 +603,43 @@ def calculate_number_of_commits(start_time: str, end_time: str, db_name: str, po
     return result
 
 
-def calculate_communication_frequency(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_communication_frequency(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate COMMUNICATION_FREQUENCY metric based on COMMUNICATION_EVENT observations."""
-    timeframe_df = _get_observations_df("COMMUNICATION_EVENT", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("COMMUNICATION_EVENT", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("COMMUNICATION_EVENT", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("COMMUNICATION_EVENT", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_perceived_productivity(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_perceived_productivity(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate PERCEIVED_PRODUCTIVITY metric based on PERCEIVED_PRODUCTIVITY observations."""
-    timeframe_df = _get_observations_df("PERCEIVED_PRODUCTIVITY", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("PERCEIVED_PRODUCTIVITY", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("PERCEIVED_PRODUCTIVITY", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("PERCEIVED_PRODUCTIVITY", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_lack_of_interruptions(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_lack_of_interruptions(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate LACK_OF_INTERRUPTIONS metric based on WORK_SESSION observations."""
-    timeframe_df = _get_observations_df("WORK_SESSION", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("WORK_SESSION", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("WORK_SESSION", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("WORK_SESSION", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_lead_time_for_changes(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate LEAD_TIME_FOR_CHANGES metric.
     Average time (in minutes) between COMMIT and DEPLOYMENT for commits with deployment references.
@@ -652,8 +656,8 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
     deployments_tf = pd.read_sql_query(
         """SELECT id, timestamp 
            FROM observations 
-           WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?""",
-        conn, params=[start_time, end_time]
+           WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?""",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get commits that reference deployments in timeframe (regardless of commit timestamp)
@@ -663,8 +667,8 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
         commits_tf = pd.read_sql_query(
             f"""SELECT commit_hash, deployment_id, timestamp 
                FROM observations 
-               WHERE type = 'COMMIT' AND deployment_id IN ({placeholders})""",
-            conn, params=deployment_ids
+               WHERE type = 'COMMIT' AND project_id = ? AND deployment_id IN ({placeholders})""",
+            conn, params=[project_id] + deployment_ids
         )
     else:
         commits_tf = pd.DataFrame(columns=['commit_hash', 'deployment_id', 'timestamp'])
@@ -673,8 +677,8 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
     deployments_pop = pd.read_sql_query(
         """SELECT id, timestamp 
            FROM observations 
-           WHERE type = 'DEPLOYMENT' AND timestamp BETWEEN ? AND ?""",
-        conn, params=[pop_start, pop_end]
+           WHERE type = 'DEPLOYMENT' AND project_id = ? AND timestamp BETWEEN ? AND ?""",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     # Get commits that reference population deployments (regardless of commit timestamp)
@@ -684,8 +688,8 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
         commits_pop = pd.read_sql_query(
             f"""SELECT commit_hash, deployment_id, timestamp 
                FROM observations 
-               WHERE type = 'COMMIT' AND deployment_id IN ({placeholders})""",
-            conn, params=deployment_ids_pop
+               WHERE type = 'COMMIT' AND project_id = ? AND deployment_id IN ({placeholders})""",
+            conn, params=[project_id] + deployment_ids_pop
         )
     else:
         commits_pop = pd.DataFrame(columns=['commit_hash', 'deployment_id', 'timestamp'])
@@ -721,19 +725,19 @@ def calculate_lead_time_for_changes(start_time: str, end_time: str, db_name: str
     return result
 
 
-def calculate_ai_acceptance_rate(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_ai_acceptance_rate(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """Calculate AI_ACCEPTANCE_RATE metric based on AI_SUGGESTION_RESULT observations."""
-    timeframe_df = _get_observations_df("AI_SUGGESTION_RESULT", db_name, start_time, end_time)
+    timeframe_df = _get_observations_df("AI_SUGGESTION_RESULT", project_id, db_name, start_time, end_time)
     # Use population time range if provided, otherwise use the same timeframe
     pop_start = population_start_time if population_start_time else start_time
     pop_end = population_end_time if population_end_time else end_time
-    population_df = _get_observations_df("AI_SUGGESTION_RESULT", db_name, pop_start, pop_end)
+    population_df = _get_observations_df("AI_SUGGESTION_RESULT", project_id, db_name, pop_start, pop_end)
     
     result = _calculate_z_score_metrics(timeframe_df['value'], population_df['value'])
     return result
 
 
-def calculate_lines_of_code_ai(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_lines_of_code_ai(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate LINES_OF_CODE_AI metric based on daily sum of AI-generated lines of code.
     For each day in the period, sum the AI lines of code (0 if none).
@@ -746,14 +750,14 @@ def calculate_lines_of_code_ai(start_time: str, end_time: str, db_name: str, pop
     
     # Get AI lines of code in timeframe
     loc_ai_tf = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get AI lines of code for population (within the user-specified date range)
     loc_ai_pop = pd.read_sql_query(
-        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT timestamp, value FROM observations WHERE type = 'LINES_OF_CODE_AI' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     conn.close()
@@ -807,7 +811,7 @@ def calculate_lines_of_code_ai(start_time: str, end_time: str, db_name: str, pop
     return result
 
 
-def calculate_ai_rework_rate(start_time: str, end_time: str, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
+def calculate_ai_rework_rate(start_time: str, end_time: str, project_id: int, db_name: str, population_start_time: str = None, population_end_time: str = None) -> Dict[str, Any]:
     """
     Calculate AI_REWORK_RATE metric.
     For each commit, return 1 if it's a rework commit (ai_rework_commit = 1), 0 otherwise.
@@ -820,14 +824,14 @@ def calculate_ai_rework_rate(start_time: str, end_time: str, db_name: str, popul
     
     # Get timeframe data - individual commits
     commits_tf = pd.read_sql_query(
-        "SELECT ai_rework_commit FROM observations WHERE type = 'COMMIT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[start_time, end_time]
+        "SELECT ai_rework_commit FROM observations WHERE type = 'COMMIT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, start_time, end_time]
     )
     
     # Get population data (within the user-specified date range)
     commits_pop = pd.read_sql_query(
-        "SELECT ai_rework_commit FROM observations WHERE type = 'COMMIT' AND timestamp BETWEEN ? AND ?",
-        conn, params=[pop_start, pop_end]
+        "SELECT ai_rework_commit FROM observations WHERE type = 'COMMIT' AND project_id = ? AND timestamp BETWEEN ? AND ?",
+        conn, params=[project_id, pop_start, pop_end]
     )
     
     conn.close()

@@ -6,9 +6,16 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 
 
+class Project(BaseModel):
+    """Model for a project record."""
+    id: int
+    name: str
+
+
 class Observation(BaseModel):
     """Model for an observation record."""
     id: int
+    project_id: int
     type: str
     timestamp: str
     value: float
@@ -120,6 +127,7 @@ class MetricsResponse(BaseModel):
 
 class CPSIntervalRequest(BaseModel):
     """Model for Composite Productivity Score calculation request with intervals support."""
+    project_id: int = Field(..., description="Project ID to filter observations")
     start_time: str = Field(..., description="Start time in ISO format (YYYY-MM-DDTHH:MM:SS)")
     end_time: str = Field(..., description="End time in ISO format (YYYY-MM-DDTHH:MM:SS)")
     intervals: int = Field(1, gt=0, description="Number of intervals to divide the time period into (default: 1)")
@@ -150,9 +158,19 @@ class CPSIntervalResult(BaseModel):
     metrics: List[CPSIntervalMetricResult] = Field(..., description="Individual metric results with weights")
 
 
+class TrendResult(BaseModel):
+    """Model for trend analysis of CPS over time using linear regression."""
+    slope: float = Field(..., description="Slope of the linear regression line (rate of change per interval)")
+    intercept: float = Field(..., description="Y-intercept of the linear regression line")
+    trend_values: List[float] = Field(..., description="Trend line values for each interval")
+    direction: str = Field(..., description="Trend direction: 'improving', 'declining', or 'stable'")
+    interpretation: str = Field(..., description="Human-readable interpretation of the trend")
+
+
 class CPSIntervalResponse(BaseModel):
     """Model for Composite Productivity Score calculation response with intervals."""
     intervals: List[CPSIntervalResult] = Field(..., description="List of interval CPS results")
+    trend: Optional[TrendResult] = Field(None, description="Linear regression trend analysis of CPS over intervals")
     predictor: Optional['PredictorResult'] = Field(None, description="Predictor analysis results (only when predictor is specified)")
 
 

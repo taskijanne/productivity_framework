@@ -6,9 +6,10 @@ A PoC framework for measuring AI productivity. Implemented as part of my Master'
 
 This framework provides a system for collecting, storing, and analyzing productivity metrics related to AI-assisted development. It includes:
 
-- SQLite database for storing observations
+- SQLite database for storing observations organized by projects
 - Data ingestion pipeline for CSV data
 - REST API built with FastAPI for querying metrics
+- React frontend with project selection
 
 ## Metrics Tracked
 
@@ -26,8 +27,10 @@ productivity_framework/
 ├── init_database.py      # Database initialization script
 ├── data_ingestor.py      # Data ingestion script
 ├── main.py               # FastAPI application
-├── sample_data.csv       # Sample data for testing
+├── data_projects.csv     # Project data
+├── data_observations.csv # Observation data
 ├── requirements.txt      # Python dependencies
+├── frontend/             # React frontend
 └── README.md            # This file
 ```
 
@@ -64,7 +67,7 @@ pip install -r requirements.txt
 python init_database.py
 ```
 
-This will create `productivity_framework.db` with the Observations table.
+This will create `productivity_framework.db` with the Projects and Observations tables.
 
 ### 4. Ingest Sample Data
 
@@ -72,7 +75,7 @@ This will create `productivity_framework.db` with the Observations table.
 python data_ingestor.py
 ```
 
-This will load the sample data from `sample_data.csv` into the database.
+This will load the project and observation data from `data_projects.csv` and `data_observations.csv` into the database.
 
 ### 5. Run the API Server
 
@@ -92,31 +95,45 @@ python -m uvicorn main:app --reload
 ### GET /
 Root endpoint providing API information.
 
+### GET /projects
+Retrieve all projects from the database.
+
 ### GET /observations
-Retrieve all observations from the database.
+Retrieve all observations from the database for a specific project.
 
 **Query Parameters:**
-- `metric_type` (optional): Filter by specific metric type
+- `project_id` (required): Filter by specific project ID
+- `type` (optional): Filter by specific observation type
 - `limit` (optional): Limit the number of results
 
 **Example:**
 ```bash
-# Get all observations
-curl http://localhost:8000/observations
+# Get all projects
+curl http://localhost:8000/projects
 
-# Get only SATISFACTION metrics
-curl http://localhost:8000/observations?metric_type=SATISFACTION
+# Get all observations for project 1
+curl http://localhost:8000/observations?project_id=1
 
-# Get latest 10 observations
-curl http://localhost:8000/observations?limit=10
+# Get only SATISFACTION metrics for project 1
+curl "http://localhost:8000/observations?project_id=1&type=SATISFACTION"
+
+# Get latest 10 observations for project 1
+curl "http://localhost:8000/observations?project_id=1&limit=10"
 ```
 
 ### GET /metrics
-Get a list of all available metric types.
+Calculate metrics for a given time period and project.
+
+**Query Parameters:**
+- `project_id` (required): Project ID to filter observations
+- `metric_types` (required): Comma-separated list of metric types
+- `start_time` (required): Start time in ISO format
+- `end_time` (required): End time in ISO format
+- `intervals` (optional): Number of intervals (default: 1)
 
 **Example:**
 ```bash
-curl http://localhost:8000/metrics
+curl "http://localhost:8000/metrics?project_id=1&metric_types=DEPLOYMENT_FREQUENCY&start_time=2025-01-01T00:00:00&end_time=2025-12-31T23:59:59"
 ```
 
 ## Interactive API Documentation
@@ -146,11 +163,20 @@ Or modify the script to accept a custom CSV file path.
 
 ## Database Schema
 
+**Projects Table:**
+- `id`: INTEGER PRIMARY KEY (auto-increment)
+- `name`: TEXT (project name, unique)
+
 **Observations Table:**
 - `id`: INTEGER PRIMARY KEY (auto-increment)
-- `metric_type`: TEXT (metric category)
+- `project_id`: INTEGER (foreign key to projects)
+- `type`: TEXT (observation type)
 - `timestamp`: TIMESTAMP (when the observation was recorded)
-- `value`: REAL (metric value)
+- `value`: REAL (observation value)
+- `commit_hash`: TEXT (optional commit reference)
+- `deployment_id`: INTEGER (optional deployment reference)
+- `deployment_failure_id`: INTEGER (optional failure reference)
+- `ai_rework_commit`: INTEGER (optional AI rework flag)
 
 ## Requirements
 

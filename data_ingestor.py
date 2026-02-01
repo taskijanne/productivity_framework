@@ -1,7 +1,7 @@
 """
 Data ingestion script for the AI Productivity Framework.
 
-This script reads data from a CSV file and ingests it into the SQLite database.
+This script reads data from CSV files and ingests it into the SQLite database.
 """
 
 import sqlite3
@@ -12,7 +12,71 @@ from datetime import datetime
 from models import ObservationType
 
 
-def ingest_data(csv_file="sample_data.csv", db_name="productivity_framework.db"):
+def ingest_projects(csv_file="data_projects.csv", db_name="productivity_framework.db"):
+    """
+    Ingest projects from CSV file into the Projects table.
+    
+    Args:
+        csv_file (str): Path to the CSV file containing the project data
+        db_name (str): Name of the database file
+    """
+    # Check if database exists
+    if not os.path.exists(db_name):
+        print(f"Error: Database '{db_name}' not found!")
+        print("Please run 'python init_database.py' first to create the database.")
+        return
+    
+    # Check if CSV file exists
+    if not os.path.exists(csv_file):
+        print(f"Error: CSV file '{csv_file}' not found!")
+        return
+    
+    # Connect to database
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+    
+    # Read and insert data from CSV
+    records_inserted = 0
+    records_skipped = 0
+    
+    with open(csv_file, 'r', encoding='utf-8') as file:
+        # Use semicolon as delimiter for European CSV format
+        csv_reader = csv.DictReader(file, delimiter=';')
+        
+        for row in csv_reader:
+            try:
+                # Get id if present in CSV
+                record_id = int(row['id']) if row.get('id') and row['id'] else None
+                name = row['name']
+                
+                # Insert with specific ID if provided, otherwise let it auto-increment
+                if record_id is not None:
+                    cursor.execute("""
+                        INSERT INTO projects (id, name)
+                        VALUES (?, ?)
+                    """, (record_id, name))
+                else:
+                    cursor.execute("""
+                        INSERT INTO projects (name)
+                        VALUES (?)
+                    """, (name,))
+                
+                records_inserted += 1
+                
+            except Exception as e:
+                print(f"Error inserting project row {row}: {e}")
+                records_skipped += 1
+                continue
+    
+    conn.commit()
+    conn.close()
+    
+    print(f"Successfully ingested {records_inserted} projects from '{csv_file}' into '{db_name}'")
+    if records_skipped > 0:
+        print(f"Skipped {records_skipped} project records due to errors")
+
+
+def ingest_observations(csv_file="data_observations.csv", db_name="productivity_framework.db"):
     """
     Ingest data from CSV file into the Observations table.
     
@@ -48,6 +112,9 @@ def ingest_data(csv_file="sample_data.csv", db_name="productivity_framework.db")
                 # Get id if present in CSV
                 record_id = int(row['id']) if row.get('id') and row['id'] else None
                 
+                # Get project_id (mandatory)
+                project_id = int(row['project_id'])
+                
                 type_value = row['type']
                 
                 # Validate observation type
@@ -69,14 +136,14 @@ def ingest_data(csv_file="sample_data.csv", db_name="productivity_framework.db")
                 # Insert with specific ID if provided, otherwise let it auto-increment
                 if record_id is not None:
                     cursor.execute("""
-                        INSERT INTO observations (id, type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (record_id, type_value, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit))
+                        INSERT INTO observations (id, project_id, type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (record_id, project_id, type_value, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit))
                 else:
                     cursor.execute("""
-                        INSERT INTO observations (type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (type_value, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit))
+                        INSERT INTO observations (project_id, type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (project_id, type_value, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit))
                 
                 records_inserted += 1
                 
@@ -88,9 +155,25 @@ def ingest_data(csv_file="sample_data.csv", db_name="productivity_framework.db")
     conn.commit()
     conn.close()
     
-    print(f"Successfully ingested {records_inserted} records from '{csv_file}' into '{db_name}'")
+    print(f"Successfully ingested {records_inserted} observations from '{csv_file}' into '{db_name}'")
     if records_skipped > 0:
         print(f"Skipped {records_skipped} records due to errors")
+
+
+def ingest_data(projects_csv="data_projects.csv", observations_csv="data_observations.csv", db_name="productivity_framework.db"):
+    """
+    Ingest data from CSV files into the database.
+    
+    Args:
+        projects_csv (str): Path to the CSV file containing the project data
+        observations_csv (str): Path to the CSV file containing the observation data
+        db_name (str): Name of the database file
+    """
+    print("Ingesting projects...")
+    ingest_projects(projects_csv, db_name)
+    
+    print("\nIngesting observations...")
+    ingest_observations(observations_csv, db_name)
 
 
 if __name__ == "__main__":

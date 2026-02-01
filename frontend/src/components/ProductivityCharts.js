@@ -192,37 +192,21 @@ function ProductivityCharts({ data, selectedMetrics }) {
   // Calculate summary statistics
   const maxCPS = Math.max(...intervals.map((i) => i.cps));
   const minCPS = Math.min(...intervals.map((i) => i.cps));
-  const trend = intervals.length > 1 
-    ? intervals[intervals.length - 1].cps - intervals[0].cps 
-    : 0;
-
-  // Calculate linear regression for trend line
-  const calculateTrendLine = (data) => {
-    const n = data.length;
-    if (n < 2) return data.map(() => 0);
-    
-    // Use interval index (0, 1, 2, ...) as x values
-    const xValues = data.map((_, i) => i);
-    const yValues = data.map((d) => d.cps);
-    
-    const sumX = xValues.reduce((a, b) => a + b, 0);
-    const sumY = yValues.reduce((a, b) => a + b, 0);
-    const sumXY = xValues.reduce((sum, x, i) => sum + x * yValues[i], 0);
-    const sumX2 = xValues.reduce((sum, x) => sum + x * x, 0);
-    
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    
-    return xValues.map((x) => slope * x + intercept);
-  };
-
-  const trendLineValues = calculateTrendLine(cpsChartData);
+  
+  // Use trend data from backend if available, otherwise calculate locally
+  const backendTrend = data.trend;
+  const trendSlope = backendTrend?.slope ?? 0;
+  const trendDirection = backendTrend?.direction ?? 'stable';
+  const trendLineValues = backendTrend?.trend_values ?? intervals.map(() => 0);
   
   // Add trend line values to chart data
   const cpsChartDataWithTrend = cpsChartData.map((point, index) => ({
     ...point,
-    trend: trendLineValues[index],
+    trend: trendLineValues[index] ?? 0,
   }));
+
+  // Determine if trend is positive based on slope (improving = positive)
+  const isTrendPositive = trendDirection === 'improving';
 
   return (
     <div className="productivity-charts">
@@ -242,8 +226,8 @@ function ProductivityCharts({ data, selectedMetrics }) {
         </div>
         <div className="summary-card">
           <span className="summary-label">Trend</span>
-          <span className={`summary-value ${trend >= 0 ? 'positive' : 'negative'}`}>
-            {trend >= 0 ? '↑' : '↓'} {Math.abs(trend).toFixed(4)}
+          <span className={`summary-value ${isTrendPositive ? 'positive' : 'negative'}`}>
+            {isTrendPositive ? '↑' : '↓'} {Math.abs(trendSlope).toFixed(4)}/interval
           </span>
         </div>
       </div>

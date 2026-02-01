@@ -12,9 +12,81 @@ from services.metrics_calculator import calculate_metric
 from models.enums import MetricType
 
 
+def calculate_trend(cps_values: List[float]) -> Dict[str, Any]:
+    """
+    Calculate linear regression trend line for CPS values.
+    
+    Args:
+        cps_values: List of CPS values for each interval
+        
+    Returns:
+        Dictionary containing:
+        - slope: Rate of change per interval
+        - intercept: Y-intercept of the trend line
+        - trend_values: List of trend line values for each interval
+        - direction: 'improving', 'declining', or 'stable'
+        - interpretation: Human-readable interpretation
+    """
+    n = len(cps_values)
+    if n < 2:
+        return {
+            'slope': 0.0,
+            'intercept': cps_values[0] if n == 1 else 0.0,
+            'trend_values': cps_values if n == 1 else [],
+            'direction': 'stable',
+            'interpretation': 'Insufficient data for trend analysis (need at least 2 intervals)'
+        }
+    
+    # Use interval index (0, 1, 2, ...) as x values
+    x_values = np.array(range(n))
+    y_values = np.array(cps_values)
+    
+    # Calculate linear regression using least squares
+    sum_x = np.sum(x_values)
+    sum_y = np.sum(y_values)
+    sum_xy = np.sum(x_values * y_values)
+    sum_x2 = np.sum(x_values * x_values)
+    
+    slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
+    intercept = (sum_y - slope * sum_x) / n
+    
+    # Calculate trend line values
+    trend_values = [float(slope * x + intercept) for x in x_values]
+    
+    # Determine direction based on slope
+    # Use a small threshold to account for floating point precision
+    threshold = 0.01
+    if slope > threshold:
+        direction = 'improving'
+    elif slope < -threshold:
+        direction = 'declining'
+    else:
+        direction = 'stable'
+    
+    # Calculate total change over all intervals
+    total_change = slope * (n - 1)
+    
+    # Generate human-readable interpretation
+    if direction == 'improving':
+        interpretation = f"CPS shows an improving trend with a slope of {slope:.4f} per interval. Total improvement over {n} intervals: {total_change:.4f}"
+    elif direction == 'declining':
+        interpretation = f"CPS shows a declining trend with a slope of {slope:.4f} per interval. Total decline over {n} intervals: {abs(total_change):.4f}"
+    else:
+        interpretation = f"CPS is relatively stable with minimal change (slope: {slope:.4f})"
+    
+    return {
+        'slope': float(slope),
+        'intercept': float(intercept),
+        'trend_values': trend_values,
+        'direction': direction,
+        'interpretation': interpretation
+    }
+
+
 def calculate_cps(
     start_time: str,
     end_time: str,
+    project_id: int,
     metrics: List[Dict[str, Any]],
     db_name: str = "productivity_framework.db",
     original_start_time: str = None,
@@ -28,6 +100,7 @@ def calculate_cps(
     Args:
         start_time: Start of the time period (normalized/SQLite format)
         end_time: End of the time period (normalized/SQLite format)
+        project_id: The project ID to filter observations
         metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
         db_name: Name of the database file
         original_start_time: Original request start_time (for response)
@@ -54,6 +127,7 @@ def calculate_cps(
             metric_type=metric_type,
             start_time=start_time,
             end_time=end_time,
+            project_id=project_id,
             db_name=db_name
         )
         
@@ -87,6 +161,7 @@ def calculate_cps_with_intervals(
     start_time: str,
     end_time: str,
     intervals: int,
+    project_id: int,
     metrics: List[Dict[str, Any]],
     db_name: str = "productivity_framework.db"
 ) -> List[Dict[str, Any]]:
@@ -99,6 +174,7 @@ def calculate_cps_with_intervals(
         start_time: Start of the time period (normalized/SQLite format)
         end_time: End of the time period (normalized/SQLite format)
         intervals: Number of intervals to divide the time period into
+        project_id: The project ID to filter observations
         metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
         db_name: Name of the database file
         
@@ -148,6 +224,7 @@ def calculate_cps_with_intervals(
                 metric_type=metric_type,
                 start_time=interval_start_str,
                 end_time=interval_end_str,
+                project_id=project_id,
                 db_name=db_name,
                 population_start_time=start_time,
                 population_end_time=end_time
@@ -299,6 +376,7 @@ def calculate_cps_with_predictor(
     start_time: str,
     end_time: str,
     intervals: int,
+    project_id: int,
     metrics: List[Dict[str, Any]],
     predictor: str,
     db_name: str = "productivity_framework.db"
@@ -310,6 +388,7 @@ def calculate_cps_with_predictor(
         start_time: Start of the time period (normalized/SQLite format)
         end_time: End of the time period (normalized/SQLite format)
         intervals: Number of intervals to divide the time period into
+        project_id: The project ID to filter observations
         metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
         predictor: The predictor metric type to analyze
         db_name: Name of the database file
@@ -324,6 +403,7 @@ def calculate_cps_with_predictor(
         start_time=start_time,
         end_time=end_time,
         intervals=intervals,
+        project_id=project_id,
         metrics=metrics,
         db_name=db_name
     )
@@ -360,6 +440,7 @@ def calculate_cps_with_predictor(
             metric_type=predictor,
             start_time=interval_start_str,
             end_time=interval_end_str,
+            project_id=project_id,
             db_name=db_name,
             population_start_time=start_time,
             population_end_time=end_time
@@ -378,8 +459,12 @@ def calculate_cps_with_predictor(
     # Calculate statistics between predictor and CPS
     statistics = calculate_predictor_statistics(predictor_z_scores, cps_values)
     
+    # Calculate trend from CPS values
+    trend = calculate_trend(cps_values)
+    
     return {
         'intervals': interval_results,
+        'trend': trend,
         'predictor': {
             'metric_type': predictor,
             'intervals': predictor_intervals,

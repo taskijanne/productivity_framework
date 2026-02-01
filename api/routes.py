@@ -9,7 +9,7 @@ import sqlite3
 import numpy as np
 from scipy import stats
 
-from models import ObservationType, Observation, MetricType, MetricResult, CPSRequest, CPSResponse, IntervalMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse
+from models import ObservationType, Observation, MetricType, MetricResult, CPSRequest, CPSResponse, IntervalMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse, Project
 from database import get_db_connection
 from services import calculate_metric
 from services.cps_calculator import calculate_cps, calculate_cps_with_intervals, calculate_cps_with_predictor
@@ -150,41 +150,77 @@ def read_root():
         "message": "Welcome to AI Productivity Framework API",
         "version": "1.0.0",
         "endpoints": {
-            "/observations": "Get all observations",
+            "/projects": "Get all available projects",
+            "/observations": "Get all observations for a project",
             "/observation_types": "Get all allowed observation types",
             "/metric_types": "Get all available metric types",
-            "/metrics": "Calculate metrics for a given time period",
+            "/metrics": "Calculate metrics for a given time period and project",
             "/cps": "Calculate Composite Productivity Score (POST)",
             "/docs": "Interactive API documentation"
         }
     }
 
 
+@router.get("/projects", response_model=List[Project])
+def get_projects():
+    """
+    Retrieve all projects from the database.
+    
+    Returns:
+        List[Project]: List of all project records
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id, name FROM projects ORDER BY id")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert rows to list of dictionaries
+        projects = [
+            {
+                "id": row["id"],
+                "name": row["name"]
+            }
+            for row in rows
+        ]
+        
+        return projects
+        
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 @router.get("/observations", response_model=List[Observation])
 def get_observations(
+    project_id: int = Query(..., description="Project ID to filter observations"),
     type: Optional[str] = None,
     limit: Optional[int] = None
 ):
     """
-    Retrieve all observations from the database.
+    Retrieve all observations from the database for a specific project.
     
     Args:
+        project_id (int): Project ID to filter observations (required)
         type (str, optional): Filter by observation type
         limit (int, optional): Limit the number of results
     
     Returns:
-        List[Observation]: List of all observation records
+        List[Observation]: List of all observation records for the project
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Build query based on parameters
-        query = "SELECT id, type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit FROM observations"
-        params = []
+        query = "SELECT id, project_id, type, timestamp, value, commit_hash, deployment_id, deployment_failure_id, ai_rework_commit FROM observations WHERE project_id = ?"
+        params = [project_id]
         
         if type:
-            query += " WHERE type = ?"
+            query += " AND type = ?"
             params.append(type)
         
         query += " ORDER BY timestamp DESC"
@@ -201,6 +237,7 @@ def get_observations(
         observations = [
             {
                 "id": row["id"],
+                "project_id": row["project_id"],
                 "type": row["type"],
                 "timestamp": row["timestamp"],
                 "value": row["value"],
@@ -245,15 +282,17 @@ def get_metric_types():
 
 @router.get("/metrics", response_model=MetricsResponse)
 def get_metrics(
+    project_id: int = Query(..., description="Project ID to filter observations"),
     metric_types: str = Query(..., description="Comma-separated list of metric types to calculate (e.g., LEAD_TIME_FOR_CHANGES,CHANGE_FAILURE_RATE)"),
     start_time: str = Query(..., description="Start time (ISO format: YYYY-MM-DDTHH:MM:SS)"),
     end_time: str = Query(..., description="End time (ISO format: YYYY-MM-DDTHH:MM:SS)"),
     intervals: int = Query(1, description="Number of intervals to divide the time period into (default: 1)", gt=0)
 ):
     """
-    Calculate one or more metrics for a given time period.
+    Calculate one or more metrics for a given time period and project.
     
     Args:
+        project_id: Project ID to filter observations (required)
         metric_types: Comma-separated list of metric types to calculate (e.g., LEAD_TIME_FOR_CHANGES,CHANGE_FAILURE_RATE)
         start_time: Start of the time period in ISO format (YYYY-MM-DDTHH:MM:SS)
         end_time: End of the time period in ISO format (YYYY-MM-DDTHH:MM:SS)
@@ -334,6 +373,7 @@ def get_metrics(
                     metric_type, 
                     interval_start_str, 
                     interval_end_str,
+                    project_id,
                     population_start_time=normalized_start,
                     population_end_time=normalized_end
                 )
@@ -378,7 +418,7 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
     Optionally, analyze how well a predictor metric explains the calculated CPS.
     
     Args:
-        request: CPSIntervalRequest containing start_time, end_time, intervals (optional, default=1), 
+        request: CPSIntervalRequest containing project_id, start_time, end_time, intervals (optional, default=1), 
                  metrics with weights, and optional predictor metric
     
     Returns:
@@ -388,6 +428,7 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                              correlation, slope, p-value).
         
     Validations:
+        - project_id must be a valid project ID
         - start_time and end_time must be valid timestamps
         - end_time must not be before start_time
         - intervals must be positive and not larger than the number of days
@@ -464,6 +505,7 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                 start_time=normalized_start,
                 end_time=normalized_end,
                 intervals=request.intervals,
+                project_id=request.project_id,
                 metrics=metrics_list,
                 predictor=request.predictor
             )
@@ -474,9 +516,16 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                 start_time=normalized_start,
                 end_time=normalized_end,
                 intervals=request.intervals,
+                project_id=request.project_id,
                 metrics=metrics_list
             )
-            return {"intervals": interval_results}
+            
+            # Calculate trend from CPS values
+            from services.cps_calculator import calculate_trend
+            cps_values = [interval['cps'] for interval in interval_results]
+            trend = calculate_trend(cps_values)
+            
+            return {"intervals": interval_results, "trend": trend}
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
