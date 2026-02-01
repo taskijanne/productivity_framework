@@ -39,7 +39,7 @@ def ingest_projects(csv_file="data_projects.csv", db_name="productivity_framewor
     records_inserted = 0
     records_skipped = 0
     
-    with open(csv_file, 'r', encoding='utf-8') as file:
+    with open(csv_file, 'r', encoding='utf-8-sig') as file:
         # Use semicolon as delimiter for European CSV format
         csv_reader = csv.DictReader(file, delimiter=';')
         
@@ -103,7 +103,7 @@ def ingest_observations(csv_file="data_observations.csv", db_name="productivity_
     records_inserted = 0
     records_skipped = 0
     
-    with open(csv_file, 'r', encoding='utf-8') as file:
+    with open(csv_file, 'r', encoding='utf-8-sig') as file:
         # Use semicolon as delimiter for European CSV format
         csv_reader = csv.DictReader(file, delimiter=';')
         
