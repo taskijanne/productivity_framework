@@ -541,6 +541,13 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                     status_code=400,
                     detail=f"Invalid predictor metric type '{request.predictor}'. Must be one of: {', '.join(valid_metrics)}"
                 )
+            # Validate lag if specified
+            if request.lag is not None:
+                if request.lag >= request.intervals:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Lag ({request.lag}) must be less than intervals ({request.intervals})"
+                    )
         
         # Convert request to dict format for service
         metrics_list = [
@@ -556,7 +563,8 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                 intervals=request.intervals,
                 project_id=request.project_id,
                 metrics=metrics_list,
-                predictor=request.predictor
+                predictor=request.predictor,
+                lag=request.lag if request.lag is not None else 0
             )
             return result
         else:

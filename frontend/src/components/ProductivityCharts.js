@@ -208,6 +208,10 @@ function ProductivityCharts({ data, selectedMetrics }) {
   // Determine if trend is positive based on slope (improving = positive)
   const isTrendPositive = trendDirection === 'improving';
 
+  // Get lag value from predictor statistics (if available)
+  const lag = predictor?.statistics?.lag ?? 0;
+  const nSamples = predictor?.statistics?.n_samples ?? intervals.length;
+
   return (
     <div className="productivity-charts">
       {/* Summary Statistics */}
@@ -238,6 +242,11 @@ function ProductivityCharts({ data, selectedMetrics }) {
         <p className="chart-description">
           The CPS combines weighted z-scores of all selected metrics. 
           Positive values indicate above-average performance.
+          {lag > 0 && (
+            <span className="lag-chart-note">
+              {' '}Gray dots indicate intervals not used in lagged correlation (lag={lag}).
+            </span>
+          )}
         </p>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={300}>
@@ -259,14 +268,39 @@ function ProductivityCharts({ data, selectedMetrics }) {
                 formatter={(value) => <span style={{ color: '#ccc' }}>{value}</span>}
               />
               <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+              {/* Gray line segment for lagged intervals (not used in correlation) */}
+              {lag > 0 && (
+                <Line
+                  type="monotone"
+                  dataKey={(d) => d.interval_number <= lag + 1 ? d.cps : null}
+                  name="CPS (not in correlation)"
+                  stroke="#666"
+                  strokeWidth={3}
+                  strokeOpacity={0.5}
+                  dot={(props) => {
+                    const { cx, cy, payload } = props;
+                    if (!payload || payload.interval_number > lag) return null;
+                    return <circle cx={cx} cy={cy} r={6} fill="#666" fillOpacity={0.5} stroke="#666" strokeWidth={2} />;
+                  }}
+                  activeDot={false}
+                  legendType="none"
+                  connectNulls={false}
+                />
+              )}
+              {/* Red line segment for intervals used in correlation */}
               <Line
                 type="monotone"
-                dataKey="cps"
+                dataKey={(d) => (lag === 0 || d.interval_number >= lag + 1) ? d.cps : null}
                 name="CPS"
                 stroke="#e94560"
                 strokeWidth={3}
-                dot={{ fill: '#e94560', strokeWidth: 2, r: 6 }}
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  if (!payload || (lag > 0 && payload.interval_number <= lag)) return null;
+                  return <circle cx={cx} cy={cy} r={6} fill="#e94560" stroke="#e94560" strokeWidth={2} />;
+                }}
                 activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
+                connectNulls={false}
               />
               <Line
                 type="linear"
@@ -331,6 +365,12 @@ function ProductivityCharts({ data, selectedMetrics }) {
           <h3>Predictor Analysis: {predictor.metric_type.replace(/_/g, ' ')}</h3>
           <p className="chart-description">
             How well does the predictor metric explain the Composite Productivity Score?
+            {predictor.statistics.lag > 0 && (
+              <span className="lag-info">
+                {' '}(Lag: {predictor.statistics.lag} interval{predictor.statistics.lag > 1 ? 's' : ''} - 
+                predictor leads CPS by {predictor.statistics.lag} interval{predictor.statistics.lag > 1 ? 's' : ''})
+              </span>
+            )}
           </p>
           <div className="predictor-stats-grid">
             <div className="predictor-stat-card">
@@ -372,6 +412,24 @@ function ProductivityCharts({ data, selectedMetrics }) {
                  predictor.statistics.p_value < 0.1 ? 'Marginally significant' : 'Not significant'}
               </span>
             </div>
+            {predictor.statistics.lag > 0 && (
+              <div className="predictor-stat-card lag-card">
+                <span className="stat-label">Lag</span>
+                <span className="stat-value">{predictor.statistics.lag}</span>
+                <span className="stat-description">
+                  Interval{predictor.statistics.lag > 1 ? 's' : ''} delay
+                </span>
+              </div>
+            )}
+            {predictor.statistics.n_samples && (
+              <div className="predictor-stat-card">
+                <span className="stat-label">Sample Size</span>
+                <span className="stat-value">{predictor.statistics.n_samples}</span>
+                <span className="stat-description">
+                  Data points used{predictor.statistics.lag > 0 ? ` (reduced from ${predictor.statistics.n_samples + predictor.statistics.lag} due to lag)` : ''}
+                </span>
+              </div>
+            )}
           </div>
           <div className="predictor-interpretation">
             <strong>Interpretation:</strong> {predictor.statistics.interpretation}

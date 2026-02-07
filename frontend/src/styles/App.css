@@ -916,6 +916,11 @@ body {
   margin-bottom: 1rem;
 }
 
+.lag-chart-note {
+  color: #888;
+  font-style: italic;
+}
+
 .stacked-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1140,6 +1145,50 @@ body {
   font-size: 0.75rem;
   color: #666;
   font-style: italic;
+}
+
+/* Lag input styling */
+.lag-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 140px;
+}
+
+.lag-group label {
+  font-size: 0.8rem;
+  color: #8884d8;
+  font-weight: 500;
+}
+
+.lag-input {
+  width: 80px;
+  padding: 0.5rem;
+  border: 1px solid #2d3a5a;
+  border-radius: 6px;
+  background-color: #16213e;
+  color: #eaeaea;
+  font-size: 0.9rem;
+}
+
+.lag-input:focus {
+  outline: none;
+  border-color: #8884d8;
+}
+
+.lag-description {
+  font-size: 0.7rem;
+  color: #888;
+  font-style: italic;
+}
+
+.lag-info {
+  color: #8884d8;
+  font-weight: 500;
+}
+
+.lag-card {
+  border-color: #8884d8 !important;
 }
 
 .remove-predictor-btn {

@@ -16,6 +16,7 @@ function ProductivityPage({ projectId }) {
   const [endDate, setEndDate] = useState('2025-12-31');
   const [intervals, setIntervals] = useState(12);
   const [predictor, setPredictor] = useState(null);
+  const [lag, setLag] = useState(0);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -111,7 +112,8 @@ function ProductivityPage({ projectId }) {
           metric: m.metric,
           weight: m.weight
         })),
-        ...(predictor && { predictor: predictor })
+        ...(predictor && { predictor: predictor }),
+        ...(predictor && lag > 0 && { lag: lag })
       };
 
       const response = await fetch(`${API_BASE_URL}/cps`, {
@@ -307,9 +309,25 @@ function ProductivityPage({ projectId }) {
                       </span>
                     )}
                   </div>
+                  <div className="lag-group">
+                    <label htmlFor="lag-input">Lag (intervals):</label>
+                    <input
+                      type="number"
+                      id="lag-input"
+                      min="0"
+                      max={intervals - 1}
+                      value={lag}
+                      onChange={(e) => setLag(Math.max(0, Math.min(intervals - 1, parseInt(e.target.value) || 0)))}
+                      className="lag-input"
+                      title="Lag N means predictor at time T is correlated with CPS at time T+N intervals"
+                    />
+                    <span className="lag-description">
+                      {lag === 0 ? 'Same interval' : `Predictor leads CPS by ${lag} interval${lag > 1 ? 's' : ''}`}
+                    </span>
+                  </div>
                   <button
                     className="remove-predictor-btn"
-                    onClick={() => setPredictor(null)}
+                    onClick={() => { setPredictor(null); setLag(0); }}
                     title="Remove predictor"
                   >
                     ×

@@ -266,7 +266,8 @@ def calculate_cps_with_intervals(
 
 def calculate_predictor_statistics(
     predictor_z_scores: List[float],
-    cps_values: List[float]
+    cps_values: List[float],
+    lag: int = 0
 ) -> Dict[str, Any]:
     """
     Calculate statistical relationship between predictor z-scores and CPS values.
@@ -274,12 +275,29 @@ def calculate_predictor_statistics(
     Args:
         predictor_z_scores: List of predictor z-scores for each interval
         cps_values: List of CPS values for each interval
+        lag: Number of intervals to lag the predictor. Lag N means predictor at 
+             time T is correlated with CPS at time T+N.
         
     Returns:
-        Dictionary containing r2, correlation, slope, p_value, and interpretation
+        Dictionary containing r2, correlation, slope, p_value, lag, n_samples, and interpretation
     """
-    predictor_arr = np.array(predictor_z_scores)
-    cps_arr = np.array(cps_values)
+    # Apply lag: correlate predictor[0:n-lag] with cps[lag:n]
+    if lag > 0:
+        if lag >= len(predictor_z_scores):
+            return {
+                'r2': 0.0,
+                'correlation': 0.0,
+                'slope': 0.0,
+                'p_value': 1.0,
+                'lag': lag,
+                'n_samples': 0,
+                'interpretation': f"Lag {lag} is too large for {len(predictor_z_scores)} intervals"
+            }
+        predictor_arr = np.array(predictor_z_scores[:-lag])  # Earlier intervals
+        cps_arr = np.array(cps_values[lag:])                  # Later intervals
+    else:
+        predictor_arr = np.array(predictor_z_scores)
+        cps_arr = np.array(cps_values)
     
     # Check for sufficient data
     n = len(predictor_arr)
@@ -289,6 +307,8 @@ def calculate_predictor_statistics(
             'correlation': 0.0,
             'slope': 0.0,
             'p_value': 1.0,
+            'lag': lag,
+            'n_samples': n,
             'interpretation': "Insufficient data (need at least 2 intervals for analysis)"
         }
     
@@ -299,6 +319,8 @@ def calculate_predictor_statistics(
             'correlation': 0.0,
             'slope': 0.0,
             'p_value': 1.0,
+            'lag': lag,
+            'n_samples': n,
             'interpretation': "Cannot compute statistics: predictor or CPS has zero variance"
         }
     
@@ -312,18 +334,20 @@ def calculate_predictor_statistics(
     slope, intercept, r_value, p_val, std_err = stats.linregress(predictor_arr, cps_arr)
     
     # Generate interpretation
-    interpretation = _interpret_predictor_statistics(correlation, r2, p_value, n)
+    interpretation = _interpret_predictor_statistics(correlation, r2, p_value, n, lag)
     
     return {
         'r2': round(r2, 4),
         'correlation': round(correlation, 4),
         'slope': round(slope, 4),
         'p_value': round(p_value, 4),
+        'lag': lag,
+        'n_samples': n,
         'interpretation': interpretation
     }
 
 
-def _interpret_predictor_statistics(correlation: float, r2: float, p_value: float, sample_size: int) -> str:
+def _interpret_predictor_statistics(correlation: float, r2: float, p_value: float, sample_size: int, lag: int = 0) -> str:
     """
     Generate human-readable interpretation of predictor statistics.
     
@@ -332,6 +356,7 @@ def _interpret_predictor_statistics(correlation: float, r2: float, p_value: floa
         r2: R-squared value
         p_value: Statistical significance
         sample_size: Number of data points
+        lag: Lag used in the analysis
         
     Returns:
         Human-readable interpretation string
@@ -365,10 +390,16 @@ def _interpret_predictor_statistics(correlation: float, r2: float, p_value: floa
     else:
         significance = "not statistically significant"
     
+    # Add lag info to interpretation
+    if lag > 0:
+        lag_info = f" With lag {lag}, predictor values are correlated with CPS {lag} interval(s) later."
+    else:
+        lag_info = ""
+    
     return (
         f"The predictor {r2_strength} explains CPS variance (R²={r2_pct:.1f}%), "
         f"with a {direction} correlation. The relationship is {significance}. "
-        f"Based on {sample_size} intervals."
+        f"Based on {sample_size} data points.{lag_info}"
     )
 
 
@@ -379,7 +410,8 @@ def calculate_cps_with_predictor(
     project_id: int,
     metrics: List[Dict[str, Any]],
     predictor: str,
-    db_name: str = "productivity_framework.db"
+    db_name: str = "productivity_framework.db",
+    lag: int = 0
 ) -> Dict[str, Any]:
     """
     Calculate CPS with intervals and analyze predictor relationship.
@@ -392,6 +424,8 @@ def calculate_cps_with_predictor(
         metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
         predictor: The predictor metric type to analyze
         db_name: Name of the database file
+        lag: Number of intervals to lag the predictor (default: 0). Lag N means 
+             predictor at time T is correlated with CPS at time T+N.
         
     Returns:
         Dictionary containing:
@@ -462,8 +496,8 @@ def calculate_cps_with_predictor(
         predictor_z_scores.append(z_score)
         cps_values.append(interval_results[i]['cps'])
     
-    # Calculate statistics between predictor and CPS
-    statistics = calculate_predictor_statistics(predictor_z_scores, cps_values)
+    # Calculate statistics between predictor and CPS (with optional lag)
+    statistics = calculate_predictor_statistics(predictor_z_scores, cps_values, lag)
     
     # Calculate trend from CPS values
     trend = calculate_trend(cps_values)

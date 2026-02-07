@@ -143,6 +143,7 @@ class CPSIntervalRequest(BaseModel):
     intervals: int = Field(1, gt=0, description="Number of intervals to divide the time period into (default: 1)")
     metrics: List[MetricWeight] = Field(..., min_length=1, description="List of metrics with weights")
     predictor: Optional[str] = Field(None, description="Optional predictor metric type to analyze how well it explains CPS (e.g., LINES_OF_CODE_AI)")
+    lag: Optional[int] = Field(None, ge=0, description="Optional lag for predictor analysis. Lag N means predictor at time T is correlated with CPS at time T+N. Must be less than intervals.")
 
 
 class CPSIntervalMetricResult(BaseModel):
@@ -196,6 +197,8 @@ class PredictorStatistics(BaseModel):
     correlation: float = Field(..., description="Pearson correlation coefficient between predictor z-scores and CPS")
     slope: float = Field(..., description="Slope of linear regression (predictor z-score -> CPS)")
     p_value: float = Field(..., description="Statistical significance of the correlation")
+    lag: int = Field(0, description="Lag used for analysis (0 = no lag, N = predictor leads CPS by N intervals)")
+    n_samples: int = Field(..., description="Number of data points used in correlation (may be less than intervals when lag > 0)")
     interpretation: str = Field(..., description="Human-readable interpretation of the predictor analysis")
 
 
