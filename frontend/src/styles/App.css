@@ -118,12 +118,106 @@ body {
 .main-content {
   flex: 1;
   padding: 2rem;
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
   width: 100%;
 }
 
 /* Metrics Page */
+.metrics-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.metrics-page-header h2 {
+  color: #eaeaea;
+  font-size: 1.75rem;
+  margin: 0;
+}
+
+.add-panel-btn {
+  background-color: transparent;
+  border: 2px solid #e94560;
+  color: #e94560;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.add-panel-btn:hover {
+  background-color: #e94560;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+}
+
+/* Metrics Panels Container */
+.metrics-panels-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.metrics-panels-container.side-by-side {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.metrics-panels-container.side-by-side .metrics-analysis-panel {
+  flex: 1;
+  min-width: 500px;
+  max-width: calc(50% - 1rem);
+}
+
+/* Metrics Analysis Panel */
+.metrics-analysis-panel {
+  background-color: #1a1a2e;
+  border: 1px solid #2d3a5a;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.panel-header h3 {
+  color: #e94560;
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.remove-panel-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e94560;
+  border-radius: 6px;
+  background-color: transparent;
+  color: #e94560;
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.remove-panel-btn:hover {
+  background-color: #e94560;
+  color: #fff;
+}
+
 .metrics-page h2 {
   margin-bottom: 1.5rem;
   color: #eaeaea;
@@ -1196,5 +1290,21 @@ body {
   .stacked-legend {
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  /* Side-by-side panels stack on mobile */
+  .metrics-panels-container.side-by-side {
+    flex-direction: column;
+  }
+
+  .metrics-panels-container.side-by-side .metrics-analysis-panel {
+    max-width: 100%;
+    min-width: auto;
+  }
+
+  .metrics-page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
   }
 }
