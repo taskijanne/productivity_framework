@@ -140,6 +140,51 @@ def interpret_correlation(r: float, p_value: float) -> str:
     return f"{strength.capitalize()} {direction} correlation, {significance}"
 
 
+def calculate_metric_summaries(interval_results: list, metric_type_list: list) -> list:
+    """
+    Calculate summary statistics (min, max, mean, stdev) for each metric across all intervals.
+    
+    Args:
+        interval_results: List of interval results containing metrics
+        metric_type_list: List of metric type strings
+        
+    Returns:
+        List of summary dictionaries with min, max, mean, stdev for each metric
+    """
+    summaries = []
+    
+    for metric_type in metric_type_list:
+        # Extract mean_value for this metric across all intervals
+        values = []
+        for interval in interval_results:
+            for metric in interval["metrics"]:
+                if metric["metric_type"] == metric_type:
+                    if metric["mean_value"] is not None and not np.isnan(metric["mean_value"]):
+                        values.append(metric["mean_value"])
+                    break
+        
+        if len(values) == 0:
+            # No valid values
+            summaries.append({
+                "metric_type": metric_type,
+                "min": 0.0,
+                "max": 0.0,
+                "mean": 0.0,
+                "stdev": 0.0
+            })
+        else:
+            values_array = np.array(values)
+            summaries.append({
+                "metric_type": metric_type,
+                "min": round(float(np.min(values_array)), 4),
+                "max": round(float(np.max(values_array)), 4),
+                "mean": round(float(np.mean(values_array)), 4),
+                "stdev": round(float(np.std(values_array, ddof=0)), 4)  # Population stdev
+            })
+    
+    return summaries
+
+
 router = APIRouter()
 
 
@@ -395,9 +440,13 @@ def get_metrics(
         if len(metric_type_list) > 1 and intervals > 1:
             correlations = calculate_correlations(interval_results, metric_type_list)
         
+        # Calculate summary statistics (min, max, mean, stdev) for each metric
+        summaries = calculate_metric_summaries(interval_results, metric_type_list)
+        
         return {
             "intervals": interval_results,
-            "correlations": correlations
+            "correlations": correlations,
+            "summaries": summaries
         }
         
     except HTTPException:

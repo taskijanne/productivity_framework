@@ -101,6 +101,15 @@ class SingleMetricResult(BaseModel):
     max_timestamp: Optional[str] = None
 
 
+class MetricSummary(BaseModel):
+    """Model for summary statistics of a metric across all intervals."""
+    metric_type: str = Field(..., description="The metric type")
+    min: float = Field(..., description="Minimum value across all intervals")
+    max: float = Field(..., description="Maximum value across all intervals")
+    mean: float = Field(..., description="Mean value across all intervals")
+    stdev: float = Field(..., description="Standard deviation across all intervals")
+
+
 class CorrelationResult(BaseModel):
     """Model for correlation between two metrics across intervals."""
     metric_1: str = Field(..., description="First metric type")
@@ -120,9 +129,10 @@ class IntervalMetricsResult(BaseModel):
 
 
 class MetricsResponse(BaseModel):
-    """Model for the complete metrics response including intervals and correlations."""
+    """Model for the complete metrics response including intervals, correlations, and summaries."""
     intervals: List[IntervalMetricsResult] = Field(..., description="List of interval results")
     correlations: Optional[List[CorrelationResult]] = Field(None, description="Correlations between metrics (only when multiple metrics and intervals > 1)")
+    summaries: List['MetricSummary'] = Field(..., description="Summary statistics (min, max, mean, stdev) for each metric across all intervals")
 
 
 class CPSIntervalRequest(BaseModel):

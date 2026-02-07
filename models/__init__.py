@@ -1,7 +1,7 @@
 """Models package for the AI Productivity Framework."""
 
 from .enums import ObservationType, MetricType
-from .schemas import Project, Observation, MetricResult, MetricWeight, CPSRequest, CPSResponse, CPSMetricResult, IntervalMetricResult, SingleMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse, CPSIntervalResult, CPSIntervalMetricResult
+from .schemas import Project, Observation, MetricResult, MetricWeight, CPSRequest, CPSResponse, CPSMetricResult, IntervalMetricResult, SingleMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse, CPSIntervalResult, CPSIntervalMetricResult, MetricSummary
 
 __all__ = [
     "ObservationType", 
@@ -21,5 +21,6 @@ __all__ = [
     "CPSIntervalRequest",
     "CPSIntervalResponse",
     "CPSIntervalResult",
-    "CPSIntervalMetricResult"
+    "CPSIntervalMetricResult",
+    "MetricSummary"
 ]

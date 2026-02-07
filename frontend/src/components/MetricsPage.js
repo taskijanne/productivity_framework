@@ -13,6 +13,7 @@ function MetricsPage({ projectId }) {
   const [intervals, setIntervals] = useState(12);
   const [results, setResults] = useState(null);
   const [correlations, setCorrelations] = useState([]);
+  const [summaries, setSummaries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -51,6 +52,7 @@ function MetricsPage({ projectId }) {
   useEffect(() => {
     setResults(null);
     setCorrelations([]);
+    setSummaries([]);
     setError(null);
   }, [projectId]);
 
@@ -96,9 +98,10 @@ function MetricsPage({ projectId }) {
       }
       
       const data = await response.json();
-      // API returns { intervals: [...], correlations: [...] }
+      // API returns { intervals: [...], correlations: [...], summaries: [...] }
       setResults(data.intervals || data);
       setCorrelations(data.correlations || []);
+      setSummaries(data.summaries || []);
     } catch (err) {
       setError(`Error fetching metrics: ${err.message}`);
       console.error('Error fetching metrics:', err);
@@ -267,6 +270,7 @@ function MetricsPage({ projectId }) {
             yAxisMetric={yAxisMetric}
             yAxisMetrics={isTimeXAxis ? yAxisMetrics : [yAxisMetric]}
             correlations={correlations}
+            summaries={summaries}
           />
         </div>
       )}

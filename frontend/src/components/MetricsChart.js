@@ -26,7 +26,7 @@ const AXIS_COLORS = [
   '#FF8042',
 ];
 
-function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], correlations = [] }) {
+function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], correlations = [], summaries = [] }) {
   const [hoveredPoint, setHoveredPoint] = useState(null);
 
   // Find the correlation for the current X and Y metrics
@@ -125,7 +125,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], corre
                 <span>{point.x?.toFixed(2)}</span>
               </div>
             )}
-            {hasMultipleYAxes ? (
+            {isTimeXAxis ? (
               yAxisMetrics.map((metricType, index) => (
                 <div key={metricType} className="tooltip-metric">
                   <strong style={{ color: AXIS_COLORS[index % AXIS_COLORS.length] }}>
@@ -187,7 +187,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], corre
           yAxisId="left"
           orientation="left"
           tick={{ fill: AXIS_COLORS[0] }}
-          tickFormatter={(value) => value.toFixed(1)}
+          tickFormatter={(value) => value.toFixed(2)}
           label={{
             value: formatAxisLabel(yAxisMetrics[0]),
             angle: -90,
@@ -203,7 +203,7 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], corre
             yAxisId="right"
             orientation="right"
             tick={{ fill: AXIS_COLORS[1] }}
-            tickFormatter={(value) => value.toFixed(1)}
+            tickFormatter={(value) => value.toFixed(2)}
             label={{
               value: formatAxisLabel(yAxisMetrics[1]),
               angle: 90,
@@ -337,6 +337,39 @@ function MetricsChart({ data, xAxisMetric, yAxisMetric, yAxisMetrics = [], corre
             <p><strong>P-value:</strong> {currentCorrelation.p_value.toFixed(4)}</p>
             <p><strong>Sample Size:</strong> {currentCorrelation.sample_size}</p>
             <p className="interpretation"><strong>Interpretation:</strong> {currentCorrelation.interpretation}</p>
+          </div>
+        </div>
+      )}
+
+      {summaries && summaries.length > 0 && (
+        <div className="summaries-section">
+          <h4>Metric Summaries</h4>
+          <div className="summaries-grid">
+            {summaries.map((summary, index) => (
+              <div key={summary.metric_type} className="summary-card" style={{ borderLeftColor: AXIS_COLORS[index % AXIS_COLORS.length] }}>
+                <h5 style={{ color: AXIS_COLORS[index % AXIS_COLORS.length] }}>
+                  {summary.metric_type.replace(/_/g, ' ')}
+                </h5>
+                <div className="summary-stats">
+                  <div className="stat-item">
+                    <span className="stat-label">Min</span>
+                    <span className="stat-value">{summary.min.toFixed(4)}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Max</span>
+                    <span className="stat-value">{summary.max.toFixed(4)}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Mean</span>
+                    <span className="stat-value">{summary.mean.toFixed(4)}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Stdev</span>
+                    <span className="stat-value">{summary.stdev.toFixed(4)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
