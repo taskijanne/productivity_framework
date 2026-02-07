@@ -53,14 +53,14 @@ def calculate_metric(
         MetricType.DEPLOYMENT_FREQUENCY: calculate_deployment_frequency,
         MetricType.CHANGE_FAILURE_RATE: calculate_change_failure_rate,
         MetricType.MEAN_TIME_TO_RECOVER: calculate_mean_time_to_recover,
-        MetricType.LINES_OF_CODE: calculate_lines_of_code,
-        MetricType.NUMBER_OF_COMMITS: calculate_number_of_commits,
+        MetricType.LINES_OF_CODE_PER_DAY: calculate_lines_of_code,
+        MetricType.NUMBER_OF_COMMITS_PER_DAY: calculate_number_of_commits,
         MetricType.COMMUNICATION_FREQUENCY: calculate_communication_frequency,
         MetricType.PERCEIVED_PRODUCTIVITY: calculate_perceived_productivity,
         MetricType.LACK_OF_INTERRUPTIONS: calculate_lack_of_interruptions,
         MetricType.LEAD_TIME_FOR_CHANGES: calculate_lead_time_for_changes,
         MetricType.AI_ACCEPTANCE_RATE: calculate_ai_acceptance_rate,
-        MetricType.LINES_OF_CODE_AI: calculate_lines_of_code_ai,
+        MetricType.LINES_OF_CODE_AI_PER_DAY: calculate_lines_of_code_ai,
         MetricType.AI_REWORK_RATE: calculate_ai_rework_rate,
     }
     

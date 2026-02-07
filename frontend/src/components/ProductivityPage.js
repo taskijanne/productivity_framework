@@ -318,7 +318,7 @@ function ProductivityPage({ projectId }) {
               ) : (
                 <button
                   className="secondary-btn add-predictor-btn"
-                  onClick={() => setPredictor(metricTypes[0] || 'LINES_OF_CODE_AI')}
+                  onClick={() => setPredictor(metricTypes[0] || 'LINES_OF_CODE_AI_PER_DAY')}
                   disabled={metricTypes.length === 0}
                 >
                   + Add Predictor
