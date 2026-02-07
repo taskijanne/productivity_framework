@@ -448,6 +448,12 @@ def calculate_cps_with_predictor(
         
         z_score = predictor_result.get('z_score', 0.0)
         
+        # For predictor analysis, we do NOT invert the z-score.
+        # This gives intuitive interpretation: e.g., "high rework → low CPS" (negative correlation)
+        # The calculate_metric function already inverted it, so we reverse that here.
+        if MetricType.is_inverted_metric(predictor):
+            z_score = -z_score
+        
         predictor_intervals.append({
             'interval_number': i + 1,
             'z_score': z_score
