@@ -135,6 +135,12 @@ class MetricsResponse(BaseModel):
     summaries: List['MetricSummary'] = Field(..., description="Summary statistics (min, max, mean, stdev) for each metric across all intervals")
 
 
+class PredictorConfig(BaseModel):
+    """Model for a predictor metric configuration with its own lag."""
+    metric: str = Field(..., description="Predictor metric type (e.g., LINES_OF_CODE_AI)")
+    lag: int = Field(0, ge=0, description="Lag for this predictor. Lag N means predictor at time T is correlated with CPS at time T+N.")
+
+
 class CPSIntervalRequest(BaseModel):
     """Model for Composite Productivity Score calculation request with intervals support."""
     project_id: int = Field(..., description="Project ID to filter observations")
@@ -142,8 +148,9 @@ class CPSIntervalRequest(BaseModel):
     end_time: str = Field(..., description="End time in ISO format (YYYY-MM-DDTHH:MM:SS)")
     intervals: int = Field(1, gt=0, description="Number of intervals to divide the time period into (default: 1)")
     metrics: List[MetricWeight] = Field(..., min_length=1, description="List of metrics with weights")
-    predictor: Optional[str] = Field(None, description="Optional predictor metric type to analyze how well it explains CPS (e.g., LINES_OF_CODE_AI)")
-    lag: Optional[int] = Field(None, ge=0, description="Optional lag for predictor analysis. Lag N means predictor at time T is correlated with CPS at time T+N. Must be less than intervals.")
+    predictor: Optional[str] = Field(None, description="(Deprecated) Single predictor metric type. Use 'predictors' instead.")
+    lag: Optional[int] = Field(None, ge=0, description="(Deprecated) Lag for single predictor. Use 'predictors' instead.")
+    predictors: Optional[List[PredictorConfig]] = Field(None, description="List of predictor metrics to analyze, each with its own lag")
 
 
 class CPSIntervalMetricResult(BaseModel):
@@ -182,7 +189,8 @@ class CPSIntervalResponse(BaseModel):
     """Model for Composite Productivity Score calculation response with intervals."""
     intervals: List[CPSIntervalResult] = Field(..., description="List of interval CPS results")
     trend: Optional[TrendResult] = Field(None, description="Linear regression trend analysis of CPS over intervals")
-    predictor: Optional['PredictorResult'] = Field(None, description="Predictor analysis results (only when predictor is specified)")
+    predictor: Optional['PredictorResult'] = Field(None, description="(Deprecated) Single predictor result. Use 'predictors' instead.")
+    predictors: Optional[List['PredictorResult']] = Field(None, description="List of predictor analysis results (one per requested predictor)")
 
 
 class PredictorIntervalResult(BaseModel):

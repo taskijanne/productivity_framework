@@ -12,7 +12,7 @@ from scipy import stats
 from models import ObservationType, Observation, MetricType, MetricResult, CPSRequest, CPSResponse, IntervalMetricResult, IntervalMetricsResult, CorrelationResult, MetricsResponse, CPSIntervalRequest, CPSIntervalResponse, Project
 from database import get_db_connection
 from services import calculate_metric
-from services.cps_calculator import calculate_cps, calculate_cps_with_intervals, calculate_cps_with_predictor
+from services.cps_calculator import calculate_cps, calculate_cps_with_intervals, calculate_cps_with_predictor, calculate_cps_with_predictors
 
 
 def calculate_correlations(interval_results: list, metric_type_list: list) -> list:
@@ -464,17 +464,17 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
     
     CPS = Σ(weight_i × z_score_i) for i = 1 to n
     
-    Optionally, analyze how well a predictor metric explains the calculated CPS.
+    Optionally, analyze how well one or more predictor metrics explain the calculated CPS.
     
     Args:
         request: CPSIntervalRequest containing project_id, start_time, end_time, intervals (optional, default=1), 
-                 metrics with weights, and optional predictor metric
+                 metrics with weights, and optional predictor metric(s)
     
     Returns:
         CPSIntervalResponse: Contains array of interval results, each with CPS and detailed 
-                             metric results for that interval. If predictor is specified, also 
-                             includes predictor analysis with z-scores and statistics (R², 
-                             correlation, slope, p-value).
+                             metric results for that interval. If predictors are specified, also 
+                             includes predictor analyses with z-scores and statistics (R², 
+                             correlation, slope, p-value) for each predictor.
         
     Validations:
         - project_id must be a valid project ID
@@ -484,7 +484,8 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
         - metrics array must contain at least one metric
         - all metric values must be valid MetricType enum values
         - weight must be between 0 and 1 (inclusive)
-        - predictor must be a valid MetricType if specified
+        - predictor(s) must be valid MetricType(s) if specified
+        - each predictor's lag must be less than intervals
     """
     try:
         # Validate and normalize timestamp format
@@ -534,20 +535,26 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
                     detail=f"Invalid metric type '{metric_config.metric}'. Must be one of: {', '.join(valid_metrics)}"
                 )
         
-        # Validate predictor metric type if specified
-        if request.predictor is not None:
-            if request.predictor not in valid_metrics:
+        # Build unified predictor configs list from both old and new fields
+        predictor_configs = []
+        if request.predictors:
+            predictor_configs = [{'metric': p.metric, 'lag': p.lag} for p in request.predictors]
+        elif request.predictor is not None:
+            # Backward compat: convert single predictor/lag to list
+            predictor_configs = [{'metric': request.predictor, 'lag': request.lag if request.lag is not None else 0}]
+        
+        # Validate all predictor metric types and lags
+        for pred_config in predictor_configs:
+            if pred_config['metric'] not in valid_metrics:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid predictor metric type '{request.predictor}'. Must be one of: {', '.join(valid_metrics)}"
+                    detail=f"Invalid predictor metric type '{pred_config['metric']}'. Must be one of: {', '.join(valid_metrics)}"
                 )
-            # Validate lag if specified
-            if request.lag is not None:
-                if request.lag >= request.intervals:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Lag ({request.lag}) must be less than intervals ({request.intervals})"
-                    )
+            if pred_config['lag'] >= request.intervals:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Lag ({pred_config['lag']}) for predictor '{pred_config['metric']}' must be less than intervals ({request.intervals})"
+                )
         
         # Convert request to dict format for service
         metrics_list = [
@@ -555,17 +562,19 @@ def calculate_composite_productivity_score(request: CPSIntervalRequest):
             for m in request.metrics
         ]
         
-        # Calculate CPS - with or without predictor
-        if request.predictor is not None:
-            result = calculate_cps_with_predictor(
+        # Calculate CPS - with or without predictors
+        if predictor_configs:
+            result = calculate_cps_with_predictors(
                 start_time=normalized_start,
                 end_time=normalized_end,
                 intervals=request.intervals,
                 project_id=request.project_id,
                 metrics=metrics_list,
-                predictor=request.predictor,
-                lag=request.lag if request.lag is not None else 0
+                predictor_configs=predictor_configs
             )
+            # Backward compat: set single 'predictor' field if only one predictor
+            if result.get('predictors') and len(result['predictors']) == 1:
+                result['predictor'] = result['predictors'][0]
             return result
         else:
             # Calculate CPS without predictor

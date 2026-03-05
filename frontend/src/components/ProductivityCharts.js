@@ -26,6 +26,9 @@ const METRIC_COLORS = {
   'DEFAULT_5': '#a855f7',
 };
 
+// Distinct colors for predictor lines
+const PREDICTOR_COLORS = ['#00C49F', '#FFBB28', '#FF8042', '#0088FE', '#a855f7', '#f472b6'];
+
 const getMetricColor = (metricType, index) => {
   return METRIC_COLORS[metricType] || METRIC_COLORS[`DEFAULT_${index % 6}`] || '#8884d8';
 };
@@ -40,6 +43,8 @@ function ProductivityCharts({ data, selectedMetrics }) {
   }
 
   const { intervals, predictor } = data;
+  // Support both old single predictor and new predictors array
+  const predictors = data.predictors || (predictor ? [predictor] : []);
 
   // Format date for display
   const formatDate = (dateStr) => {
@@ -57,15 +62,15 @@ function ProductivityCharts({ data, selectedMetrics }) {
       interval_number: interval.interval_number,
     };
     
-    // Add predictor z_score if available
-    if (predictor && predictor.intervals) {
-      const predictorInterval = predictor.intervals.find(
+    // Add each predictor's z_score
+    predictors.forEach((pred) => {
+      const predInterval = pred.intervals.find(
         (p) => p.interval_number === interval.interval_number
       );
-      if (predictorInterval) {
-        dataPoint.predictor_z_score = predictorInterval.z_score;
+      if (predInterval) {
+        dataPoint[`predictor_${pred.metric_type}`] = predInterval.z_score;
       }
-    }
+    });
     
     return dataPoint;
   });
@@ -131,7 +136,7 @@ function ProductivityCharts({ data, selectedMetrics }) {
     return null;
   };
 
-  // Custom tooltip for Predictor chart
+  // Custom tooltip for Predictor chart (multiple predictors)
   const PredictorTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       const dataPoint = payload[0].payload;
@@ -140,12 +145,18 @@ function ProductivityCharts({ data, selectedMetrics }) {
           <p className="tooltip-title">Interval {dataPoint.interval_number}</p>
           <p className="tooltip-time">{dataPoint.fullDate}</p>
           <div className="tooltip-metrics">
-            <div className="tooltip-metric">
-              <strong style={{ color: '#00C49F' }}>Predictor Z-Score:</strong>
-              <span style={{ color: '#00C49F' }}>
-                {dataPoint.predictor_z_score?.toFixed(4)}
-              </span>
-            </div>
+            {predictors.map((pred, idx) => {
+              const color = PREDICTOR_COLORS[idx % PREDICTOR_COLORS.length];
+              const val = dataPoint[`predictor_${pred.metric_type}`];
+              return (
+                <div key={pred.metric_type} className="tooltip-metric">
+                  <strong style={{ color }}>{pred.metric_type.replace(/_/g, ' ')}:</strong>
+                  <span style={{ color }}>
+                    {val != null ? val.toFixed(4) : 'N/A'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -208,9 +219,10 @@ function ProductivityCharts({ data, selectedMetrics }) {
   // Determine if trend is positive based on slope (improving = positive)
   const isTrendPositive = trendDirection === 'improving';
 
-  // Get lag value from predictor statistics (if available)
-  const lag = predictor?.statistics?.lag ?? 0;
-  const nSamples = predictor?.statistics?.n_samples ?? intervals.length;
+  // Get max lag across all predictors for CPS chart lag indication
+  const maxLag = predictors.length > 0
+    ? Math.max(...predictors.map((p) => p.statistics?.lag ?? 0))
+    : 0;
 
   return (
     <div className="productivity-charts">
@@ -242,9 +254,9 @@ function ProductivityCharts({ data, selectedMetrics }) {
         <p className="chart-description">
           The CPS combines weighted z-scores of all selected metrics. 
           Positive values indicate above-average performance.
-          {lag > 0 && (
+          {maxLag > 0 && (
             <span className="lag-chart-note">
-              {' '}Gray dots indicate intervals not used in lagged correlation (lag={lag}).
+              {' '}Gray dots indicate intervals not used in lagged correlation (max lag={maxLag}).
             </span>
           )}
         </p>
@@ -269,17 +281,17 @@ function ProductivityCharts({ data, selectedMetrics }) {
               />
               <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
               {/* Gray line segment for lagged intervals (not used in correlation) */}
-              {lag > 0 && (
+              {maxLag > 0 && (
                 <Line
                   type="monotone"
-                  dataKey={(d) => d.interval_number <= lag + 1 ? d.cps : null}
+                  dataKey={(d) => d.interval_number <= maxLag + 1 ? d.cps : null}
                   name="CPS (not in correlation)"
                   stroke="#666"
                   strokeWidth={3}
                   strokeOpacity={0.5}
                   dot={(props) => {
                     const { cx, cy, payload } = props;
-                    if (!payload || payload.interval_number > lag) return null;
+                    if (!payload || payload.interval_number > maxLag) return null;
                     return <circle cx={cx} cy={cy} r={6} fill="#666" fillOpacity={0.5} stroke="#666" strokeWidth={2} />;
                   }}
                   activeDot={false}
@@ -290,13 +302,13 @@ function ProductivityCharts({ data, selectedMetrics }) {
               {/* Red line segment for intervals used in correlation */}
               <Line
                 type="monotone"
-                dataKey={(d) => (lag === 0 || d.interval_number >= lag + 1) ? d.cps : null}
+                dataKey={(d) => (maxLag === 0 || d.interval_number >= maxLag + 1) ? d.cps : null}
                 name="CPS"
                 stroke="#e94560"
                 strokeWidth={3}
                 dot={(props) => {
                   const { cx, cy, payload } = props;
-                  if (!payload || (lag > 0 && payload.interval_number <= lag)) return null;
+                  if (!payload || (maxLag > 0 && payload.interval_number <= maxLag)) return null;
                   return <circle cx={cx} cy={cy} r={6} fill="#e94560" stroke="#e94560" strokeWidth={2} />;
                 }}
                 activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
@@ -317,12 +329,14 @@ function ProductivityCharts({ data, selectedMetrics }) {
         </div>
       </div>
 
-      {/* Predictor Line Chart - Only shown when predictor is selected */}
-      {predictor && (
+      {/* Predictor Line Chart - Only shown when predictors are selected */}
+      {predictors.length > 0 && (
         <div className="chart-section">
-          <h3>Predictor: {predictor.metric_type.replace(/_/g, ' ')} Over Time</h3>
+          <h3>
+            Predictor{predictors.length > 1 ? 's' : ''}: {predictors.map((p) => p.metric_type.replace(/_/g, ' ')).join(', ')} Over Time
+          </h3>
           <p className="chart-description">
-            Z-score of the selected predictor metric across intervals.
+            Z-scores of the selected predictor metric{predictors.length > 1 ? 's' : ''} across intervals.
           </p>
           <div className="chart-wrapper">
             <ResponsiveContainer width="100%" height={300}>
@@ -344,98 +358,110 @@ function ProductivityCharts({ data, selectedMetrics }) {
                   formatter={(value) => <span style={{ color: '#ccc' }}>{value}</span>}
                 />
                 <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
-                <Line
-                  type="monotone"
-                  dataKey="predictor_z_score"
-                  name={`${predictor.metric_type.replace(/_/g, ' ')} Z-Score`}
-                  stroke="#00C49F"
-                  strokeWidth={3}
-                  dot={{ fill: '#00C49F', strokeWidth: 2, r: 6 }}
-                  activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
-                />
+                {predictors.map((pred, idx) => {
+                  const color = PREDICTOR_COLORS[idx % PREDICTOR_COLORS.length];
+                  return (
+                    <Line
+                      key={pred.metric_type}
+                      type="monotone"
+                      dataKey={`predictor_${pred.metric_type}`}
+                      name={`${pred.metric_type.replace(/_/g, ' ')} Z-Score`}
+                      stroke={color}
+                      strokeWidth={3}
+                      dot={{ fill: color, strokeWidth: 2, r: 6 }}
+                      activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
+                    />
+                  );
+                })}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
       )}
 
-      {/* Predictor Statistics */}
-      {predictor && predictor.statistics && (
-        <div className="chart-section predictor-statistics-section">
-          <h3>Predictor Analysis: {predictor.metric_type.replace(/_/g, ' ')}</h3>
+      {/* Predictor Statistics - one section per predictor */}
+      {predictors.map((pred, idx) => pred.statistics && (
+        <div key={pred.metric_type} className="chart-section predictor-statistics-section">
+          <h3>
+            <span
+              className="predictor-color-dot"
+              style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: PREDICTOR_COLORS[idx % PREDICTOR_COLORS.length], marginRight: 8, verticalAlign: 'middle' }}
+            />
+            Predictor Analysis: {pred.metric_type.replace(/_/g, ' ')}
+          </h3>
           <p className="chart-description">
-            How well does the predictor metric explain the Composite Productivity Score?
-            {predictor.statistics.lag > 0 && (
+            How well does this predictor metric explain the Composite Productivity Score?
+            {pred.statistics.lag > 0 && (
               <span className="lag-info">
-                {' '}(Lag: {predictor.statistics.lag} interval{predictor.statistics.lag > 1 ? 's' : ''} - 
-                predictor leads CPS by {predictor.statistics.lag} interval{predictor.statistics.lag > 1 ? 's' : ''})
+                {' '}(Lag: {pred.statistics.lag} interval{pred.statistics.lag > 1 ? 's' : ''} - 
+                predictor leads CPS by {pred.statistics.lag} interval{pred.statistics.lag > 1 ? 's' : ''})
               </span>
             )}
           </p>
           <div className="predictor-stats-grid">
             <div className="predictor-stat-card">
               <span className="stat-label">R² (Explained Variance)</span>
-              <span className="stat-value">{(predictor.statistics.r2 * 100).toFixed(1)}%</span>
+              <span className="stat-value">{(pred.statistics.r2 * 100).toFixed(1)}%</span>
               <span className="stat-description">
-                {predictor.statistics.r2 >= 0.7 ? 'Strong' : 
-                 predictor.statistics.r2 >= 0.5 ? 'Moderate' :
-                 predictor.statistics.r2 >= 0.3 ? 'Weak' : 'Poor'} explanatory power
+                {pred.statistics.r2 >= 0.7 ? 'Strong' : 
+                 pred.statistics.r2 >= 0.5 ? 'Moderate' :
+                 pred.statistics.r2 >= 0.3 ? 'Weak' : 'Poor'} explanatory power
               </span>
             </div>
             <div className="predictor-stat-card">
               <span className="stat-label">Correlation</span>
-              <span className={`stat-value ${predictor.statistics.correlation >= 0 ? 'positive' : 'negative'}`}>
-                {predictor.statistics.correlation.toFixed(4)}
+              <span className={`stat-value ${pred.statistics.correlation >= 0 ? 'positive' : 'negative'}`}>
+                {pred.statistics.correlation.toFixed(4)}
               </span>
               <span className="stat-description">
-                {Math.abs(predictor.statistics.correlation) >= 0.7 ? 'Very strong' :
-                 Math.abs(predictor.statistics.correlation) >= 0.5 ? 'Strong' :
-                 Math.abs(predictor.statistics.correlation) >= 0.3 ? 'Moderate' : 'Weak'}{' '}
-                {predictor.statistics.correlation >= 0 ? 'positive' : 'negative'} correlation
+                {Math.abs(pred.statistics.correlation) >= 0.7 ? 'Very strong' :
+                 Math.abs(pred.statistics.correlation) >= 0.5 ? 'Strong' :
+                 Math.abs(pred.statistics.correlation) >= 0.3 ? 'Moderate' : 'Weak'}{' '}
+                {pred.statistics.correlation >= 0 ? 'positive' : 'negative'} correlation
               </span>
             </div>
             <div className="predictor-stat-card">
               <span className="stat-label">Slope</span>
-              <span className="stat-value">{predictor.statistics.slope.toFixed(4)}</span>
+              <span className="stat-value">{pred.statistics.slope.toFixed(4)}</span>
               <span className="stat-description">
                 CPS change per unit predictor z-score
               </span>
             </div>
             <div className="predictor-stat-card">
               <span className="stat-label">P-Value</span>
-              <span className={`stat-value ${predictor.statistics.p_value < 0.05 ? 'significant' : 'not-significant'}`}>
-                {predictor.statistics.p_value.toFixed(4)}
+              <span className={`stat-value ${pred.statistics.p_value < 0.05 ? 'significant' : 'not-significant'}`}>
+                {pred.statistics.p_value.toFixed(4)}
               </span>
               <span className="stat-description">
-                {predictor.statistics.p_value < 0.01 ? 'Highly significant' :
-                 predictor.statistics.p_value < 0.05 ? 'Significant' :
-                 predictor.statistics.p_value < 0.1 ? 'Marginally significant' : 'Not significant'}
+                {pred.statistics.p_value < 0.01 ? 'Highly significant' :
+                 pred.statistics.p_value < 0.05 ? 'Significant' :
+                 pred.statistics.p_value < 0.1 ? 'Marginally significant' : 'Not significant'}
               </span>
             </div>
-            {predictor.statistics.lag > 0 && (
+            {pred.statistics.lag > 0 && (
               <div className="predictor-stat-card lag-card">
                 <span className="stat-label">Lag</span>
-                <span className="stat-value">{predictor.statistics.lag}</span>
+                <span className="stat-value">{pred.statistics.lag}</span>
                 <span className="stat-description">
-                  Interval{predictor.statistics.lag > 1 ? 's' : ''} delay
+                  Interval{pred.statistics.lag > 1 ? 's' : ''} delay
                 </span>
               </div>
             )}
-            {predictor.statistics.n_samples && (
+            {pred.statistics.n_samples && (
               <div className="predictor-stat-card">
                 <span className="stat-label">Sample Size</span>
-                <span className="stat-value">{predictor.statistics.n_samples}</span>
+                <span className="stat-value">{pred.statistics.n_samples}</span>
                 <span className="stat-description">
-                  Data points used{predictor.statistics.lag > 0 ? ` (reduced from ${predictor.statistics.n_samples + predictor.statistics.lag} due to lag)` : ''}
+                  Data points used{pred.statistics.lag > 0 ? ` (reduced from ${pred.statistics.n_samples + pred.statistics.lag} due to lag)` : ''}
                 </span>
               </div>
             )}
           </div>
           <div className="predictor-interpretation">
-            <strong>Interpretation:</strong> {predictor.statistics.interpretation}
+            <strong>Interpretation:</strong> {pred.statistics.interpretation}
           </div>
         </div>
-      )}
+      ))}
 
       {/* Stacked Bar Chart for Z-Scores */}
       <div className="chart-section">

@@ -15,8 +15,7 @@ function ProductivityPage({ projectId }) {
   const [startDate, setStartDate] = useState('2025-01-01');
   const [endDate, setEndDate] = useState('2025-12-31');
   const [intervals, setIntervals] = useState(12);
-  const [predictor, setPredictor] = useState(null);
-  const [lag, setLag] = useState(0);
+  const [predictors, setPredictors] = useState([]);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -112,8 +111,9 @@ function ProductivityPage({ projectId }) {
           metric: m.metric,
           weight: m.weight
         })),
-        ...(predictor && { predictor: predictor }),
-        ...(predictor && lag > 0 && { lag: lag })
+        ...(predictors.length > 0 && {
+          predictors: predictors.map((p) => ({ metric: p.metric, lag: p.lag }))
+        })
       };
 
       const response = await fetch(`${API_BASE_URL}/cps`, {
@@ -284,64 +284,85 @@ function ProductivityPage({ projectId }) {
             <div className="predictor-header">
               <h4>Predictor Analysis</h4>
               <span className="predictor-description">
-                Analyze how well a metric explains the calculated CPS
+                Analyze how well one or more metrics explain the calculated CPS
               </span>
             </div>
             <div className="predictor-controls">
-              {predictor ? (
-                <div className="predictor-selected">
-                  <div className="predictor-info">
-                    <span className="predictor-label">Predictor:</span>
-                    <select
-                      value={predictor}
-                      onChange={(e) => setPredictor(e.target.value)}
-                      className="predictor-select"
-                    >
-                      {metricTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type.replace(/_/g, ' ')}
-                        </option>
-                      ))}
-                    </select>
-                    {metricDescriptions[predictor] && (
-                      <span className="predictor-metric-description">
-                        {metricDescriptions[predictor]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="lag-group">
-                    <label htmlFor="lag-input">Lag (intervals):</label>
-                    <input
-                      type="number"
-                      id="lag-input"
-                      min="0"
-                      max={intervals - 1}
-                      value={lag}
-                      onChange={(e) => setLag(Math.max(0, Math.min(intervals - 1, parseInt(e.target.value) || 0)))}
-                      className="lag-input"
-                      title="Lag N means predictor at time T is correlated with CPS at time T+N intervals"
-                    />
-                    <span className="lag-description">
-                      {lag === 0 ? 'Same interval' : `Predictor leads CPS by ${lag} interval${lag > 1 ? 's' : ''}`}
-                    </span>
-                  </div>
-                  <button
-                    className="remove-predictor-btn"
-                    onClick={() => { setPredictor(null); setLag(0); }}
-                    title="Remove predictor"
-                  >
-                    ×
-                  </button>
+              {predictors.length > 0 && (
+                <div className="predictors-list">
+                  {predictors.map((pred, index) => (
+                    <div key={index} className="predictor-selected">
+                      <div className="predictor-info">
+                        <span className="predictor-label">Predictor {index + 1}:</span>
+                        <select
+                          value={pred.metric}
+                          onChange={(e) => {
+                            const updated = [...predictors];
+                            updated[index] = { ...updated[index], metric: e.target.value };
+                            setPredictors(updated);
+                          }}
+                          className="predictor-select"
+                        >
+                          {metricTypes.map((type) => (
+                            <option
+                              key={type}
+                              value={type}
+                              disabled={predictors.some((p, i) => i !== index && p.metric === type)}
+                            >
+                              {type.replace(/_/g, ' ')}
+                            </option>
+                          ))}
+                        </select>
+                        {metricDescriptions[pred.metric] && (
+                          <span className="predictor-metric-description">
+                            {metricDescriptions[pred.metric]}
+                          </span>
+                        )}
+                      </div>
+                      <div className="lag-group">
+                        <label htmlFor={`lag-input-${index}`}>Lag:</label>
+                        <input
+                          type="number"
+                          id={`lag-input-${index}`}
+                          min="0"
+                          max={intervals - 1}
+                          value={pred.lag}
+                          onChange={(e) => {
+                            const updated = [...predictors];
+                            updated[index] = { ...updated[index], lag: Math.max(0, Math.min(intervals - 1, parseInt(e.target.value) || 0)) };
+                            setPredictors(updated);
+                          }}
+                          className="lag-input"
+                          title="Lag N means predictor at time T is correlated with CPS at time T+N intervals"
+                        />
+                        <span className="lag-description">
+                          {pred.lag === 0 ? 'Same interval' : `Leads by ${pred.lag}`}
+                        </span>
+                      </div>
+                      <button
+                        className="remove-predictor-btn"
+                        onClick={() => setPredictors(predictors.filter((_, i) => i !== index))}
+                        title="Remove predictor"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <button
-                  className="secondary-btn add-predictor-btn"
-                  onClick={() => setPredictor(metricTypes[0] || 'LINES_OF_CODE_AI_PER_DAY')}
-                  disabled={metricTypes.length === 0}
-                >
-                  + Add Predictor
-                </button>
               )}
+              <button
+                className="secondary-btn add-predictor-btn"
+                onClick={() => {
+                  const used = predictors.map((p) => p.metric);
+                  const available = metricTypes.find((m) => !used.includes(m));
+                  if (available) {
+                    setPredictors([...predictors, { metric: available, lag: 0 }]);
+                  }
+                }}
+                disabled={metricTypes.length === 0 || predictors.length >= metricTypes.length}
+              >
+                + Add Predictor
+              </button>
             </div>
           </div>
         </div>

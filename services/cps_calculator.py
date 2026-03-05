@@ -414,7 +414,8 @@ def calculate_cps_with_predictor(
     lag: int = 0
 ) -> Dict[str, Any]:
     """
-    Calculate CPS with intervals and analyze predictor relationship.
+    Calculate CPS with intervals and analyze a single predictor relationship.
+    Backward-compatible wrapper around calculate_cps_with_predictors.
     
     Args:
         start_time: Start of the time period (normalized/SQLite format)
@@ -424,13 +425,53 @@ def calculate_cps_with_predictor(
         metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
         predictor: The predictor metric type to analyze
         db_name: Name of the database file
-        lag: Number of intervals to lag the predictor (default: 0). Lag N means 
-             predictor at time T is correlated with CPS at time T+N.
+        lag: Number of intervals to lag the predictor (default: 0)
+        
+    Returns:
+        Dictionary containing intervals, trend, predictor (single), and predictors (list)
+    """
+    predictor_configs = [{'metric': predictor, 'lag': lag}]
+    result = calculate_cps_with_predictors(
+        start_time=start_time,
+        end_time=end_time,
+        intervals=intervals,
+        project_id=project_id,
+        metrics=metrics,
+        predictor_configs=predictor_configs,
+        db_name=db_name
+    )
+    # For backward compat, also set single 'predictor' field
+    if result.get('predictors') and len(result['predictors']) > 0:
+        result['predictor'] = result['predictors'][0]
+    return result
+
+
+def calculate_cps_with_predictors(
+    start_time: str,
+    end_time: str,
+    intervals: int,
+    project_id: int,
+    metrics: List[Dict[str, Any]],
+    predictor_configs: List[Dict[str, Any]],
+    db_name: str = "productivity_framework.db"
+) -> Dict[str, Any]:
+    """
+    Calculate CPS with intervals and analyze multiple predictor relationships.
+    
+    Args:
+        start_time: Start of the time period (normalized/SQLite format)
+        end_time: End of the time period (normalized/SQLite format)
+        intervals: Number of intervals to divide the time period into
+        project_id: The project ID to filter observations
+        metrics: List of dicts with 'metric' (MetricType) and 'weight' (0-1)
+        predictor_configs: List of dicts with 'metric' (str) and 'lag' (int)
+        db_name: Name of the database file
         
     Returns:
         Dictionary containing:
         - intervals: List of CPS interval results
-        - predictor: Predictor analysis with intervals and statistics
+        - trend: Trend analysis
+        - predictors: List of predictor analysis results
     """
     # First calculate CPS for all intervals
     interval_results = calculate_cps_with_intervals(
@@ -450,64 +491,72 @@ def calculate_cps_with_predictor(
     total_duration = end_dt - start_dt
     interval_duration = total_duration / intervals
     
-    # Calculate predictor metric for each interval
-    predictor_intervals = []
-    predictor_z_scores = []
-    cps_values = []
-    
-    for i in range(intervals):
-        interval_start_dt = start_dt + (interval_duration * i)
-        interval_end_dt = start_dt + (interval_duration * (i + 1))
-        
-        # For the last interval, ensure we use the exact end_time
-        if i == intervals - 1:
-            interval_end_dt = end_dt
-        else:
-            # Subtract 1 second from end to avoid overlap
-            interval_end_dt = interval_end_dt - timedelta(seconds=1)
-        
-        interval_start_str = interval_start_dt.strftime("%Y-%m-%d %H:%M:%S")
-        interval_end_str = interval_end_dt.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Calculate predictor metric for this interval
-        predictor_result = calculate_metric(
-            metric_type=predictor,
-            start_time=interval_start_str,
-            end_time=interval_end_str,
-            project_id=project_id,
-            db_name=db_name,
-            population_start_time=start_time,
-            population_end_time=end_time
-        )
-        
-        z_score = predictor_result.get('z_score', 0.0)
-        
-        # For predictor analysis, we do NOT invert the z-score.
-        # This gives intuitive interpretation: e.g., "high rework → low CPS" (negative correlation)
-        # The calculate_metric function already inverted it, so we reverse that here.
-        if MetricType.is_inverted_metric(predictor):
-            z_score = -z_score
-        
-        predictor_intervals.append({
-            'interval_number': i + 1,
-            'z_score': z_score
-        })
-        
-        predictor_z_scores.append(z_score)
-        cps_values.append(interval_results[i]['cps'])
-    
-    # Calculate statistics between predictor and CPS (with optional lag)
-    statistics = calculate_predictor_statistics(predictor_z_scores, cps_values, lag)
+    # CPS values needed for all predictors
+    cps_values = [interval['cps'] for interval in interval_results]
     
     # Calculate trend from CPS values
     trend = calculate_trend(cps_values)
     
+    # Calculate each predictor
+    predictors_results = []
+    for pred_config in predictor_configs:
+        predictor_metric = pred_config['metric']
+        predictor_lag = pred_config.get('lag', 0)
+        
+        predictor_intervals = []
+        predictor_z_scores = []
+        
+        for i in range(intervals):
+            interval_start_dt = start_dt + (interval_duration * i)
+            interval_end_dt = start_dt + (interval_duration * (i + 1))
+            
+            # For the last interval, ensure we use the exact end_time
+            if i == intervals - 1:
+                interval_end_dt = end_dt
+            else:
+                # Subtract 1 second from end to avoid overlap
+                interval_end_dt = interval_end_dt - timedelta(seconds=1)
+            
+            interval_start_str = interval_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            interval_end_str = interval_end_dt.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Calculate predictor metric for this interval
+            predictor_result = calculate_metric(
+                metric_type=predictor_metric,
+                start_time=interval_start_str,
+                end_time=interval_end_str,
+                project_id=project_id,
+                db_name=db_name,
+                population_start_time=start_time,
+                population_end_time=end_time
+            )
+            
+            z_score = predictor_result.get('z_score', 0.0)
+            
+            # For predictor analysis, we do NOT invert the z-score.
+            # This gives intuitive interpretation: e.g., "high rework → low CPS" (negative correlation)
+            # The calculate_metric function already inverted it, so we reverse that here.
+            if MetricType.is_inverted_metric(predictor_metric):
+                z_score = -z_score
+            
+            predictor_intervals.append({
+                'interval_number': i + 1,
+                'z_score': z_score
+            })
+            
+            predictor_z_scores.append(z_score)
+        
+        # Calculate statistics between predictor and CPS (with this predictor's lag)
+        statistics = calculate_predictor_statistics(predictor_z_scores, cps_values, predictor_lag)
+        
+        predictors_results.append({
+            'metric_type': predictor_metric,
+            'intervals': predictor_intervals,
+            'statistics': statistics
+        })
+    
     return {
         'intervals': interval_results,
         'trend': trend,
-        'predictor': {
-            'metric_type': predictor,
-            'intervals': predictor_intervals,
-            'statistics': statistics
-        }
+        'predictors': predictors_results
     }
